@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import webbrowser
 from collections import Counter
+from contextlib import closing
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 
+from quizz.db import DB_PATH, connect, import_decks
 from quizz.decks import DECKS_DIR, DeckError, load_decks
 from quizz.models import Deck, deck_json_schema
 from quizz.render import RENDER_DIR, render_deck
@@ -73,6 +75,32 @@ def render(
         typer.echo(f"wrote {out}")
         if open_browser:
             webbrowser.open(out.as_uri())
+
+
+@app.command("import")
+def import_(
+    decks_dir: Annotated[Path, typer.Option(help="Directory of *.yaml decks.")] = DECKS_DIR,
+    db_path: Annotated[Path, typer.Option(help="SQLite database file.")] = DB_PATH,
+) -> None:
+    """Load the decks into the database (also done automatically when the server starts)."""
+    decks = _load_or_exit(decks_dir)
+    with closing(connect(db_path)) as conn:
+        counts = import_decks(conn, decks)
+    summary = ", ".join(f"{counts[k]} {k}" for k in ("new", "changed", "unchanged"))
+    typer.echo(f"imported {len(decks)} deck(s) into {db_path}: {summary} questions")
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option(help="Interface to bind.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port.")] = 8000,
+    reload: Annotated[bool, typer.Option(help="Restart on code changes (development).")] = False,
+) -> None:
+    """Run the API (and the web UI once built), importing the decks at startup."""
+    import uvicorn
+
+    _load_or_exit(DECKS_DIR)  # report deck errors clearly instead of as a startup traceback
+    uvicorn.run("quizz.api:app", host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":

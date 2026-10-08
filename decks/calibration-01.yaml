@@ -1,0 +1,725 @@
+# yaml-language-server: $schema=./deck.schema.json
+id: calibration-01
+title: "Calibration #1 — broad baseline"
+description: >-
+  20 questions across all six domains and levels 1–5, from easier to harder.
+  Sets a first baseline for breadth and depth, used to adapt the next decks.
+author: "claude 2026-10-08"
+questions:
+
+  # ---------------------------------------------------------------- level 1
+  - id: ds-ml-eval-001
+    domain: ds
+    topic: ml-eval
+    tags: [class-imbalance, metrics]
+    level: 1
+    kind: concept
+    type: single
+    prompt: |
+      In a fraud dataset, **1%** of transactions are fraudulent. A "model" that always
+      predicts **not fraud** is evaluated on it. Which pair of values does it get?
+    choices:
+      - id: a
+        text: "Accuracy 99%, recall on the fraud class 0%"
+        why: "It is right on every legitimate transaction (99% of the data) and catches no fraud at all."
+      - id: b
+        text: "Accuracy 99%, recall on the fraud class 99%"
+        why: "Recall = TP / (TP + FN). It never predicts fraud, so TP = 0 and recall = 0."
+      - id: c
+        text: "Accuracy 1%, recall on the fraud class 100%"
+        why: "Those are the scores of the opposite model, which always predicts fraud."
+      - id: d
+        text: "Accuracy 50%, recall on the fraud class 50%"
+        why: "That's roughly what a fair coin flip would score, but a constant prediction is not random."
+    answer: [a]
+    explanation: |
+      This is the **accuracy paradox**: when classes are imbalanced, accuracy is driven by the
+      majority class. To judge performance on the rare class, look at recall, precision, F1
+      or PR-AUC (average precision), and always compare against this trivial baseline.
+
+  - id: cs-data-structures-001
+    domain: cs
+    topic: data-structures
+    tags: [hashing, complexity, python]
+    level: 1
+    kind: practical
+    type: single
+    prompt: |
+      For each of 100,000 incoming ids, you check whether it belongs to a collection of
+      1,000,000 known ids:
+
+      ```python
+      known = load_known_ids()        # a list of 1,000,000 ints
+      hits = [x for x in incoming if x in known]
+      ```
+
+      Which change gives by far the biggest speedup?
+    choices:
+      - id: a
+        text: "Sort `known` first, then keep using `x in known`"
+        why: "`in` on a list is a linear scan whether it's sorted or not. Sorting only helps if you binary-search with `bisect`, which gives O(log n)."
+      - id: b
+        text: "Convert `known` to a tuple, which is immutable and more compact"
+        why: "Membership in a tuple is also a linear scan: still O(n) per lookup."
+      - id: c
+        text: "Convert `known` to a set"
+        why: "A hash lookup is O(1) on average, so the job goes from ~10¹¹ comparisons to ~10⁵ lookups."
+      - id: d
+        text: "Convert `known` to a NumPy array, so the lookups run in C"
+        why: "`x in array` still scans the whole array for each lookup, just in C. The vectorized way would be `np.isin(incoming, known)`."
+    answer: [c]
+    explanation: |
+      `x in list` is O(n), so the loop costs O(n·m) ≈ 10⁵ × 10⁶ = 10¹¹ operations. A `set`
+      is a hash table: it answers membership in O(1) on average, so the total becomes O(n + m).
+      Rule of thumb: if you test membership repeatedly, use a set or a dict.
+
+  - id: infra-containers-001
+    domain: infra
+    topic: containers
+    tags: [docker, virtualization]
+    level: 1
+    kind: concept
+    type: single
+    prompt: |
+      What is the fundamental difference between a **container** and a **virtual machine**?
+    choices:
+      - id: a
+        text: "Containers are always more secure than VMs because they are smaller"
+        why: "It's the other way around. Containers share the host kernel, so a kernel exploit can escape them; VMs give stronger isolation."
+      - id: b
+        text: "A container image ships its own kernel, while a VM image doesn't"
+        why: "Reversed. A VM boots its own guest kernel; a container image holds only user-space files and uses the host kernel."
+      - id: c
+        text: "Containers share the host's kernel; a VM boots its own guest OS"
+        why: "Correct. Containers are isolated host processes using kernel features (namespaces, cgroups); VMs run a full OS on hardware virtualized by a hypervisor."
+      - id: d
+        text: "VMs are meant for on-premises servers, while containers are designed for the cloud"
+        why: "Both run anywhere. In the cloud, containers usually run *inside* VMs."
+    answer: [c]
+    explanation: |
+      A container is a group of host processes isolated with Linux **namespaces** (pid, net, mount…)
+      and limited with **cgroups**, plus a packaged filesystem (the image). It starts in milliseconds
+      but shares the host kernel. A VM virtualizes hardware through a hypervisor and boots its own
+      kernel, which makes it heavier but more strongly isolated. gVisor and Firecracker microVMs sit
+      in between.
+
+  # ---------------------------------------------------------------- level 2
+  - id: swe-git-001
+    domain: swe
+    topic: git
+    tags: [history, collaboration]
+    level: 2
+    kind: concept
+    type: single
+    prompt: |
+      A bad commit `a1b2c3` was pushed to `main` two days ago, and teammates have pulled since.
+      What is the right way to undo it?
+    choices:
+      - id: a
+        text: "`git revert a1b2c3`, then push"
+        why: "Correct. It creates a new commit that applies the inverse change, so history is preserved and everyone can pull normally."
+      - id: b
+        text: "`git reset --hard a1b2c3~1`, then `git push --force`"
+        why: "This rewrites shared history: teammates' clones diverge, and every commit pushed after `a1b2c3` is thrown away too."
+      - id: c
+        text: "`git commit --amend` to remove the changes"
+        why: "`--amend` only rewrites the *latest* commit, and it still rewrites pushed history."
+      - id: d
+        text: "`git rm a1b2c3` to delete the commit"
+        why: "`git rm` removes *files* from the working tree and the index, not commits."
+    answer: [a]
+    explanation: |
+      Rule of thumb: never rewrite history that others have pulled. `git revert` undoes a commit by
+      adding a new one, which is safe on shared branches. `reset`, `--amend` and `rebase` rewrite
+      history, which is fine on your own unpushed or private branches. If you ever must force-push,
+      `--force-with-lease` at least refuses to overwrite commits you haven't seen.
+
+  - id: de-file-formats-001
+    domain: de
+    topic: file-formats
+    tags: [parquet, columnar, predicate-pushdown]
+    level: 2
+    kind: internals
+    type: multi
+    prompt: |
+      The same `sales` table (100 columns, 1 billion rows) is stored as CSV and as Parquet.
+      Why does this query usually run much faster on the Parquet version?
+      **Select all that apply.**
+
+      ```sql
+      SELECT avg(amount) FROM sales WHERE country = 'FR';
+      ```
+    choices:
+      - id: a
+        text: "Parquet is columnar: only the `amount` and `country` columns are read"
+        why: "Correct (projection pushdown). Reading 2 of 100 columns skips most of the bytes."
+      - id: b
+        text: "Row groups store min/max statistics, so groups that cannot contain `'FR'` are skipped"
+        why: "Correct (predicate pushdown). It works best when the data is sorted or clustered on the filtered column."
+      - id: c
+        text: "Columns are encoded and compressed (dictionary, RLE…), so far fewer bytes are read"
+        why: "Correct. A low-cardinality column like `country` compresses extremely well with dictionary + RLE encoding."
+      - id: d
+        text: "Parquet keeps a B-tree index on every column, like a database table"
+        why: "Parquet has no B-tree indexes, only lightweight statistics (min/max, optional page indexes and bloom filters)."
+      - id: e
+        text: "Parquet writers automatically sort the data by every column when the file is written"
+        why: "Nothing is sorted unless the writer sorts it. Sorting by the columns you filter on is an optimization you choose."
+    answer: [a, b, c]
+    explanation: |
+      Parquet speeds up analytical reads in three ways: a **columnar layout** (read only the columns
+      you need), **statistics** at row-group and page level (skip data that can't match), and
+      per-column **encoding + compression**. CSV gets none of these: every byte has to be read and
+      parsed as text. Engines like DuckDB, Spark, Polars and Trino use all three automatically.
+
+  - id: ds-stats-001
+    domain: ds
+    topic: stats
+    tags: [hypothesis-testing, p-value, ab-testing]
+    level: 2
+    kind: concept
+    type: single
+    prompt: |
+      An A/B test comparing conversion rates reports **p = 0.03** for B vs A.
+      Which interpretation is correct?
+    choices:
+      - id: a
+        text: "There is only a 3% probability that A and B actually perform the same (that H₀ is true)"
+        why: "This is the most common misreading. A p-value is computed *assuming* H₀ is true, so it cannot be P(H₀ | data)."
+      - id: b
+        text: "There is a 97% probability that B is better than A"
+        why: "A probability that a hypothesis is true needs a Bayesian analysis with a prior; a p-value doesn't provide it."
+      - id: c
+        text: "If there were truly no difference, a result at least this extreme would occur about 3% of the time"
+        why: "Correct: p = P(data at least this extreme | H₀)."
+      - id: d
+        text: "The uplift is statistically significant, so it is large enough to matter for the business"
+        why: "Significance says nothing about effect size. With a large enough sample, a negligible uplift gets a tiny p-value."
+    answer: [c]
+    explanation: |
+      A p-value measures how **surprising the data would be under the null hypothesis**. It is
+      neither the probability that H₀ is true nor a measure of effect size. Report the effect with a
+      confidence interval, and fix the sample size and stopping rule in advance: peeking repeatedly
+      and stopping as soon as p < 0.05 inflates the false-positive rate.
+
+  - id: stack-docker-001
+    domain: stack
+    topic: docker
+    tags: [layer-cache, build]
+    level: 2
+    kind: practical
+    type: single
+    prompt: |
+      Every time you change one line of application code, this image takes 5 minutes to rebuild
+      because all the dependencies get reinstalled. How do you fix it?
+
+      ```dockerfile
+      FROM python:3.12-slim
+      WORKDIR /app
+      COPY . .
+      RUN pip install -r requirements.txt
+      CMD ["python", "-m", "app"]
+      ```
+    choices:
+      - id: a
+        text: "Copy `requirements.txt` and install before `COPY . .`"
+        why: "Correct. The install layer then depends only on `requirements.txt`, so it stays cached until the dependencies change."
+      - id: b
+        text: "Build with `--no-cache` so stale layers are never reused"
+        why: "That turns the layer cache off completely, so every build becomes slow."
+      - id: c
+        text: "Switch to a larger base image that already includes common packages"
+        why: "It doesn't address the cause: `COPY . .` invalidates the cache for every later layer whenever any file changes."
+      - id: d
+        text: "Move `RUN pip install` to the end of the Dockerfile, after `CMD`"
+        why: "Instruction order matters for caching, but a `RUN` after `COPY . .` is still invalidated by every code change."
+    answer: [a]
+    explanation: |
+      Docker reuses a cached layer only if that instruction **and every layer before it** are
+      unchanged. So order instructions from least to most frequently changing: dependency manifests
+      first, then the install step, then the source code. Also add a `.dockerignore` (`.git`, data,
+      virtualenvs) and consider BuildKit cache mounts (`RUN --mount=type=cache,target=/root/.cache/pip`).
+
+  - id: infra-kubernetes-001
+    domain: infra
+    topic: kubernetes
+    tags: [probes, reliability]
+    level: 2
+    kind: practical
+    type: single
+    prompt: |
+      Your service needs ~60 s at startup to load a model into memory. On Kubernetes, its pods keep
+      getting restarted (eventually `CrashLoopBackOff`) and never become available, yet the
+      application logs show no error. What is the most likely cause and fix?
+    choices:
+      - id: a
+        text: "The readiness probe fails during warm-up, so the kubelet restarts the container: remove the readiness probe"
+        why: "A failing readiness probe never restarts anything. It only takes the pod out of the Service endpoints, which is exactly what you want during warm-up."
+      - id: b
+        text: "The liveness probe fails during warm-up: add a startup probe"
+        why: "Correct. The kubelet kills containers that fail liveness. Liveness and readiness checks are suspended until the startup probe succeeds, which protects slow starters; keep readiness to hold traffic until the pod is warm."
+      - id: c
+        text: "The Deployment has too few replicas, so each pod gets overloaded: scale it up"
+        why: "More replicas would all go through the same restart loop."
+      - id: d
+        text: "The image is too large and times out while starting: slim it down"
+        why: "Image size affects the pull before the container starts, not restarts after it has started."
+    answer: [b]
+    explanation: |
+      The three probes have different jobs:
+
+      - **liveness**: "is it stuck?" On failure, the container is restarted.
+      - **readiness**: "can it take traffic now?" On failure, the pod is removed from the Service endpoints, with no restart.
+      - **startup**: "has it finished starting?" Liveness and readiness are suspended until it succeeds.
+
+      An aggressive liveness probe on a slow-starting app is a classic self-inflicted restart loop.
+
+  # ---------------------------------------------------------------- level 3
+  - id: de-sql-001
+    domain: de
+    topic: sql
+    tags: [window-functions, ties]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      You want each customer's largest order:
+
+      ```sql
+      SELECT customer_id, order_id, amount
+      FROM (
+        SELECT *, RANK() OVER (PARTITION BY customer_id ORDER BY amount DESC) AS r
+        FROM orders
+      ) t
+      WHERE r = 1;
+      ```
+
+      Customer 42 has three orders with amounts **100, 100 and 50**. How many rows does the query
+      return for customer 42, and how many would it return with `ROW_NUMBER()` instead of `RANK()`?
+    choices:
+      - id: a
+        text: "`RANK`: 1 row; `ROW_NUMBER`: 1 row"
+        why: "`RANK` gives tied rows the same rank, so both orders of 100 get rank 1."
+      - id: b
+        text: "`RANK`: 2 rows; `ROW_NUMBER`: 2 rows"
+        why: "`ROW_NUMBER` always assigns distinct numbers (1, 2, 3), even when rows tie."
+      - id: c
+        text: "`RANK`: 2 rows; `ROW_NUMBER`: 1 row"
+        why: "Correct. Which of the two tied orders `ROW_NUMBER` keeps is arbitrary; add a tie-breaker (`ORDER BY amount DESC, order_id`) to make it deterministic."
+      - id: d
+        text: "`RANK`: 1 row; `ROW_NUMBER`: 2 rows"
+        why: "Reversed: `RANK` keeps ties together, `ROW_NUMBER` breaks them."
+    answer: [c]
+    explanation: |
+      For the amounts 100, 100, 50:
+
+      - `ROW_NUMBER` gives 1, 2, 3: always unique, with ties broken arbitrarily.
+      - `RANK` gives 1, 1, 3: ties share a rank, then there's a gap.
+      - `DENSE_RANK` gives 1, 1, 2: ties share a rank, with no gap.
+
+      Pick the one that matches what "the top one" means for your use case, and make the ordering
+      deterministic with a tie-breaker. Several engines (DuckDB, Snowflake, BigQuery…) also support
+      `QUALIFY r = 1`, which filters on a window function without a subquery.
+
+  - id: cs-complexity-001
+    domain: cs
+    topic: complexity
+    tags: [amortized-analysis, dynamic-array]
+    level: 3
+    kind: concept
+    type: single
+    prompt: |
+      A dynamic array (like Python's `list` or C++'s `std::vector`) reallocates and copies all its
+      elements when it is full. Which statement about `append` is correct?
+    choices:
+      - id: a
+        text: "Every append is O(1) in the worst case"
+        why: "The append that triggers a reallocation copies all n elements, so that one is O(n)."
+      - id: b
+        text: "Appends are O(1) amortized if capacity grows by a fixed number of slots (e.g. +1000) each time"
+        why: "With additive growth there are ~n/1000 reallocations, each costing O(n): O(n²) in total, so O(n) amortized per append."
+      - id: c
+        text: "Appends are O(1) amortized if capacity grows by a constant factor (e.g. ×2)"
+        why: "Correct. The total copy cost is n + n/2 + n/4 + … < 2n, so each append costs O(1) on average."
+      - id: d
+        text: "Appends are O(log n) amortized, because there are O(log n) reallocations"
+        why: "With geometric growth there are O(log n) reallocations, but their sizes form a geometric series that sums to O(n) in total, which is O(1) per append."
+    answer: [c]
+    explanation: |
+      An **amortized** cost is the average cost per operation over a worst-case sequence of operations.
+      Geometric growth makes the occasional expensive copy cheap on average. CPython's `list`
+      over-allocates by roughly 12.5%, which is still geometric. The trade-off is memory: up to
+      (factor − 1) × n unused slots. If you know the final size in advance, preallocate
+      (`reserve()` in C++).
+
+  - id: ds-ml-validation-001
+    domain: ds
+    topic: ml-validation
+    tags: [data-leakage, cross-validation, feature-selection, scikit-learn]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      You have 200 samples and 5,000 features, and you run:
+
+      ```python
+      X_scaled = StandardScaler().fit_transform(X)
+      X_sel = SelectKBest(f_classif, k=20).fit_transform(X_scaled, y)
+      scores = cross_val_score(LogisticRegression(), X_sel, y, cv=5)
+      ```
+
+      The mean CV accuracy is 0.92. What is the problem?
+    choices:
+      - id: a
+        text: "None: scaling is unsupervised, so nothing can leak"
+        why: "Scaling leaks a little, but the real problem is `SelectKBest`: it used the labels of every sample, including those that later become validation folds."
+      - id: b
+        text: "The score is inflated: feature selection saw the validation labels"
+        why: "Correct. With 5,000 noise features, picking the 20 most correlated with `y` on all the data can give high CV accuracy on pure noise."
+      - id: c
+        text: "The score is pessimistically biased, because the scaler was fit on more data than each fold"
+        why: "Leakage inflates scores; it doesn't deflate them."
+      - id: d
+        text: "Cross-validation can't be combined with feature selection at all"
+        why: "It can, as long as the selection is refit inside each training fold, e.g. as a step of a `Pipeline`."
+    answer: [b]
+    explanation: |
+      Every step that **learns from data** (scaling statistics, imputation, feature selection, target
+      encoding…) must be fit on the training folds only. In scikit-learn, put the steps in a
+      `Pipeline` and cross-validate the whole pipeline:
+
+      ```python
+      pipe = make_pipeline(StandardScaler(), SelectKBest(f_classif, k=20), LogisticRegression())
+      cross_val_score(pipe, X, y, cv=5)
+      ```
+
+      This is the textbook "wrong way to do cross-validation" (Hastie et al., *ESL* §7.10.2).
+
+  - id: swe-async-web-001
+    domain: swe
+    topic: async-web
+    tags: [fastapi, asyncio, event-loop, blocking-io]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      A FastAPI app runs with a single uvicorn worker:
+
+      ```python
+      @app.get("/report")
+      async def report():
+          r = requests.get("https://slow-api.example.com/data")  # takes ~2 s
+          return r.json()
+      ```
+
+      50 clients call `/report` at the same time. What happens?
+    choices:
+      - id: a
+        text: "All 50 responses arrive after about 2 s, because the handler is `async`"
+        why: "`requests` is blocking. Called inside `async def`, it blocks the event loop and nothing else can run meanwhile."
+      - id: b
+        text: "They are served one at a time: the last client waits ~100 s"
+        why: "Correct. Each call blocks the event loop for 2 s. Fix it with an async client (`await` an `httpx.AsyncClient` call), or declare the route with a plain `def`, which FastAPI runs in a threadpool."
+      - id: c
+        text: "FastAPI detects the blocking call and moves it to a worker thread automatically"
+        why: "FastAPI only offloads whole `def` endpoints to a threadpool; it cannot detect a blocking call inside an `async def`."
+      - id: d
+        text: "uvicorn spawns extra worker processes to absorb the burst of concurrent requests"
+        why: "The number of workers is fixed at startup (`--workers`); it doesn't scale with requests."
+    answer: [b]
+    explanation: |
+      With `async def`, everything runs on a **single event-loop thread**. Any blocking call (a sync
+      HTTP client, `time.sleep`, a heavy CPU loop, a sync DB driver) freezes every other request.
+      There are three ways out: use async libraries and `await` them, use a plain `def` endpoint (run
+      in a threadpool), or offload explicitly with `await asyncio.to_thread(...)`.
+
+  - id: stack-dbt-001
+    domain: stack
+    topic: dbt
+    tags: [incremental-models, late-arriving-data]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      An incremental dbt model:
+
+      ```sql
+      {{ config(materialized='incremental', unique_key='event_id') }}
+
+      select * from {{ source('app', 'events') }}
+      {% if is_incremental() %}
+        where event_ts > (select max(event_ts) from {{ this }})
+      {% endif %}
+      ```
+
+      Mobile clients sometimes upload events hours late, so an event with an **old** `event_ts`
+      lands in the source **after** a run has already processed newer events. What happens to it?
+    choices:
+      - id: a
+        text: "It is picked up by the next run, because `unique_key` merges on `event_id`"
+        why: "`unique_key` only controls how *selected* rows are merged. The `where` filter excludes this row before any merge happens."
+      - id: b
+        text: "It is silently skipped by every later run, and stays missing until a `--full-refresh`"
+        why: "Correct. Its `event_ts` is below the current max, so the incremental filter never selects it."
+      - id: c
+        text: "dbt fails the run because rows arrived out of order"
+        why: "dbt doesn't check ordering; it runs the SQL you wrote."
+      - id: d
+        text: "It is inserted again on every subsequent run, creating duplicate rows"
+        why: "It is never selected, so it's neither inserted nor duplicated."
+    answer: [b]
+    explanation: |
+      Filtering on `max(event_ts)` assumes events arrive in order. There are two common fixes:
+
+      - Filter on a **load/ingestion timestamp** (e.g. `_loaded_at`) instead of the event time.
+      - Use a **lookback window**, e.g. `event_ts > (select max(event_ts) - interval '3 days' from {{ this }})`,
+        and let `unique_key` with a merge or delete+insert strategy deduplicate the overlap.
+
+      It also helps to monitor for late data, for example by comparing daily row counts between the
+      source and the model.
+
+  - id: de-pipelines-001
+    domain: de
+    topic: pipelines
+    tags: [idempotency, backfill, partitioning]
+    level: 3
+    kind: design
+    type: single
+    prompt: |
+      A daily batch job **appends** yesterday's events to a partitioned table. Yesterday it crashed
+      halfway through its write and was re-run, and now some events appear twice. Which design best
+      prevents this whole class of problem?
+    choices:
+      - id: a
+        text: "Add automatic retries with exponential backoff to the job"
+        why: "Retries re-run the same non-idempotent append. They cause duplicates instead of preventing them."
+      - id: b
+        text: "Add `SELECT DISTINCT` to every downstream query"
+        why: "This pushes the problem onto every consumer, costs compute, and is wrong whenever two identical rows are legitimate."
+      - id: c
+        text: "Make each run overwrite the partition of its logical date"
+        why: "Correct (partition overwrite, or delete + insert in one transaction). The run becomes idempotent: running it once or five times gives the same final state."
+      - id: d
+        text: "Run the job less often, e.g. weekly, to reduce the chance of a crash"
+        why: "That changes how often the problem happens, not its cause."
+    answer: [c]
+    explanation: |
+      **Idempotent** tasks are the foundation of reliable pipelines. A run should be a function of
+      its *logical date* (its data interval), not of the moment it happens to execute, and it should
+      write by **replacing** its slice: partition overwrite, `MERGE` on a natural key, or
+      delete + insert in one transaction. This also makes backfills safe, because re-running any past
+      date reproduces it exactly. Orchestrators like Airflow and Dagster are built around this pattern.
+
+  # ---------------------------------------------------------------- level 4
+  - id: cs-storage-engines-001
+    domain: cs
+    topic: storage-engines
+    tags: [lsm-tree, b-tree, write-amplification]
+    level: 4
+    kind: internals
+    type: single
+    prompt: |
+      Which statement about **LSM-tree** storage engines (RocksDB, Cassandra, ScyllaDB) compared with
+      **B-tree** engines (PostgreSQL, InnoDB) is correct?
+    choices:
+      - id: a
+        text: "B-trees have no write amplification, because pages are updated in place"
+        why: "Changing one row rewrites a whole page (8–16 KB), plus the WAL, plus sometimes a full-page image. That is significant write amplification."
+      - id: b
+        text: "LSM-trees are faster at point reads, because each key lives in exactly one sorted file"
+        why: "A key may exist in the memtable and in several levels, so a read can check multiple files. Bloom filters reduce that cost."
+      - id: c
+        text: "LSM-trees turn random writes into sequential ones, at the cost of read amplification and compaction"
+        why: "Correct. Writes are buffered in memory and flushed as sorted runs. This is the core trade-off of log-structured storage."
+      - id: d
+        text: "Compaction in an LSM-tree is optional: it only reclaims disk space"
+        why: "Compaction also bounds read amplification (fewer runs to check) and purges tombstones. Without it, reads degrade steadily."
+    answer: [c]
+    explanation: |
+      **LSM-trees**: writes go to a WAL plus an in-memory memtable, which is flushed to immutable sorted
+      files (SSTables) that compaction later merges. They give high write throughput and good
+      compression, at the cost of read amplification (mitigated by bloom filters) and compaction I/O.
+      **B-trees** update fixed-size pages in place: reads are predictable, but random writes are more
+      expensive. Choosing between them means balancing read, write and space amplification (the
+      "RUM conjecture").
+
+  - id: ds-ml-calibration-001
+    domain: ds
+    topic: ml-calibration
+    tags: [undersampling, probability-calibration, class-imbalance]
+    level: 4
+    kind: practical
+    type: single
+    prompt: |
+      To train a fraud classifier, you kept **all** positive examples but only a random **10% of the
+      negatives**. The business now needs **true** fraud probabilities to compute expected losses.
+      What should you do with the model's predicted probability `p_s`?
+    choices:
+      - id: a
+        text: "Use `p_s` as is: undersampling doesn't change how the model ranks transactions"
+        why: "The ranking (and so ROC-AUC) is indeed unchanged, but the probability *level* is inflated: the model learned a fraud base rate about 10× too high."
+      - id: b
+        text: "Divide `p_s` by 10 to undo the 10× undersampling"
+        why: "That is only roughly right when `p_s` is tiny. The correction applies to odds, not probabilities: for `p_s = 0.9` the true value is ≈ 0.47, not 0.09."
+      - id: c
+        text: "Multiply the odds `p_s/(1−p_s)` by 0.1 and convert back to a probability"
+        why: "Correct. Undersampling negatives at rate β multiplies the positive-class odds by 1/β, so you multiply them back by β. Then check calibration on an un-sampled holdout."
+      - id: d
+        text: "Fit Platt scaling on the undersampled training data to recalibrate the outputs"
+        why: "A calibrator fit on data with the same skewed class balance learns the skewed base rate again. Calibration needs data with the true class balance."
+    answer: [c]
+    explanation: |
+      By Bayes' rule, undersampling only changes the **prior**. Keeping negatives with probability β
+      multiplies the positive-class odds by 1/β, so:
+
+      `odds_true = β · odds_s`, i.e. `p = β·p_s / (β·p_s + 1 − p_s)`
+
+      This is called *prior correction* (King & Zeng 2001; Dal Pozzolo et al. 2015). Ranking metrics
+      don't need it, but any decision based on absolute probabilities (expected cost, cost-based
+      thresholds) does. Then verify with a reliability curve or the Brier score on data that has
+      the real class balance.
+
+  - id: swe-api-design-001
+    domain: swe
+    topic: api-design
+    tags: [idempotency, retries, distributed-systems]
+    level: 4
+    kind: design
+    type: multi
+    prompt: |
+      A mobile client calls `POST /payments`. Sometimes the response times out even though the
+      server charged the card, so the client retries and causes a **double charge**. Which
+      mechanisms prevent this? **Select all that apply.**
+    choices:
+      - id: a
+        text: "The client sends an `Idempotency-Key` per payment; the server stores it with the result and replays that result on retries"
+        why: "Correct. This is the standard pattern used by payment APIs."
+      - id: b
+        text: "A unique constraint on `(client_id, idempotency_key)`, so two concurrent retries can't both create a payment"
+        why: "Correct. Without an atomic guard, two retries racing each other can both pass a 'have I seen this key?' check."
+      - id: c
+        text: "The client generates the payment id and calls `PUT /payments/{id}` with create-if-absent semantics"
+        why: "Correct. A PUT on a client-chosen id is idempotent by definition: a retry targets the same resource."
+      - id: d
+        text: "Retry with exponential backoff and jitter, so the server has time to finish the first request"
+        why: "Backoff spreads retries out and reduces load, but every retry that reaches the server still creates a new charge."
+      - id: e
+        text: "Serve the API over HTTPS with TLS 1.3, so that requests cannot be replayed"
+        why: "TLS protects data in transit. It doesn't stop your own client from legitimately sending the request twice."
+    answer: [a, b, c]
+    explanation: |
+      Over an unreliable network, a client can't tell "request lost" from "response lost", so
+      **at-least-once delivery + idempotent processing** is the practical way to get effectively-once
+      behavior. Idempotency keys (as in Stripe's API) or client-chosen resource ids make retries
+      safe, and a database uniqueness constraint (or an atomic insert-if-absent) closes the race
+      between concurrent retries. Backoff and jitter complement these mechanisms but don't replace
+      them.
+
+  - id: infra-cloud-networking-001
+    domain: infra
+    topic: cloud-networking
+    tags: [aws, vpc, nat-gateway, s3, cost]
+    level: 4
+    kind: design
+    type: single
+    prompt: |
+      On AWS, Spark jobs running in **private subnets** read about **50 TB/month** from S3 buckets in
+      the same region. A large line on the bill is *"NAT Gateway – data processed"*. What is the
+      best fix?
+    choices:
+      - id: a
+        text: "Add an S3 gateway VPC endpoint"
+        why: "Correct. Once it's associated with the private subnets' route tables, S3 traffic goes through the endpoint instead of the NAT gateway, and S3 gateway endpoints have no hourly or per-GB charge."
+      - id: b
+        text: "Move the buckets to another region with cheaper storage"
+        why: "That adds inter-region data transfer charges, and the traffic still goes through the NAT gateway."
+      - id: c
+        text: "Move the instances to public subnets so they reach S3 directly through an internet gateway"
+        why: "It avoids the NAT gateway but exposes the compute to the internet. The endpoint gives the same saving while keeping everything private."
+      - id: d
+        text: "Enable S3 Transfer Acceleration on the buckets to optimize the network path"
+        why: "Acceleration speeds up long-distance transfers through edge locations. It costs extra and doesn't bypass the NAT gateway."
+    answer: [a]
+    explanation: |
+      A NAT gateway charges per GB processed (≈ $0.045/GB in many regions), so 50 TB/month costs roughly
+      $2k/month just to reach S3. **Gateway endpoints** (only available for S3 and DynamoDB) are free
+      and keep the traffic on the AWS network. Interface endpoints (PrivateLink) cover other services,
+      but they do have hourly and per-GB costs. Cloud cost reviews regularly turn up this kind of
+      network-path problem.
+
+  # ---------------------------------------------------------------- level 5
+  - id: de-streaming-001
+    domain: de
+    topic: streaming
+    tags: [kafka, exactly-once, transactions]
+    level: 5
+    kind: internals
+    type: single
+    prompt: |
+      A consume-transform-produce application reads topic `in` and writes topic `out` with Kafka's
+      exactly-once semantics enabled (idempotent producer + transactions, with consumer offsets sent
+      through `sendOffsetsToTransaction`). What exactly does this guarantee?
+    choices:
+      - id: a
+        text: "Each input record is processed by the application code exactly once, even across crashes"
+        why: "After a crash, the open transaction is aborted and the batch is reprocessed, so your code can run several times for the same record. Only the effects written to Kafka are atomic."
+      - id: b
+        text: "Output records and consumed offsets are committed atomically, in one transaction"
+        why: "Correct. Consumers with `isolation.level=read_committed` never see output from aborted attempts. External side effects (DB writes, HTTP calls) are not covered."
+      - id: c
+        text: "The broker deduplicates messages by content hash across all topics"
+        why: "The idempotent producer deduplicates retries by (producer id, partition, sequence number). There is no content-based deduplication."
+      - id: d
+        text: "Writes to an external sink such as PostgreSQL also become exactly-once"
+        why: "Kafka transactions don't extend to external systems. That needs an idempotent sink (upsert on a key) or the offsets stored in the same DB transaction."
+    answer: [b]
+    explanation: |
+      Kafka's exactly-once means **"effectively once, within Kafka"**. The produced records and the
+      consumer offsets commit in one transaction, and downstream consumers using
+      `isolation.level=read_committed` only see committed data. Processing itself can still happen
+      more than once after failures, and side effects outside Kafka need their own idempotency.
+      Kafka Streams (`processing.guarantee=exactly_once_v2`) and Flink's two-phase-commit sinks
+      build on the same ideas.
+
+  - id: stack-python-async-001
+    domain: stack
+    topic: python-async
+    tags: [asyncio, gather, taskgroup, cancellation]
+    level: 5
+    kind: internals
+    type: multi
+    prompt: |
+      ```python
+      async def main():
+          try:
+              results = await asyncio.gather(fetch(1), fetch(2), fetch(3))
+          except ValueError:
+              log.warning("a fetch failed")
+          await do_other_work()  # takes 5 s
+      ```
+
+      `fetch(2)` raises `ValueError` after 0.1 s, while `fetch(1)` and `fetch(3)` would each take 2 s.
+      Which statements are true? **Select all that apply.**
+    choices:
+      - id: a
+        text: "The `except ValueError` branch runs after about 0.1 s"
+        why: "Correct. With the default `return_exceptions=False`, the first exception propagates to the awaiting task immediately."
+      - id: b
+        text: "`gather` wraps the error in an `ExceptionGroup`, so `except ValueError` doesn't catch it"
+        why: "`gather` raises the original `ValueError` as is. Wrapping in an `ExceptionGroup` is what `TaskGroup` does."
+      - id: c
+        text: "`fetch(1)` and `fetch(3)` keep running while `do_other_work()` runs"
+        why: "Correct. `gather` does not cancel the other awaitables when one fails. This is a classic source of leaked tasks and surprising side effects."
+      - id: d
+        text: "With `asyncio.TaskGroup` instead, the other fetches are cancelled and the error arrives inside an `ExceptionGroup`"
+        why: "Correct. TaskGroup (Python 3.11+) cancels the sibling tasks and raises an `ExceptionGroup`, which you handle with `except*`."
+      - id: e
+        text: "With `return_exceptions=True`, `gather` raises an `ExceptionGroup` that contains the `ValueError`"
+        why: "With `return_exceptions=True` nothing is raised: the exception object is returned in `results`, at position 1."
+    answer: [a, c, d]
+    explanation: |
+      `asyncio.gather` predates structured concurrency: on the first error it propagates the
+      exception but **leaves the other tasks running**. `asyncio.TaskGroup` (Python 3.11+) is the
+      structured alternative: on failure it cancels the remaining tasks, waits for them, and raises an
+      `ExceptionGroup`. Prefer `TaskGroup` in new code, and use `gather(..., return_exceptions=True)`
+      only when you really want a result or error for every task.

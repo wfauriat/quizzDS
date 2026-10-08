@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Choice": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable choice id (a, b, c...); `answer` refers to it.",
+          "pattern": "^[a-z]$",
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "description": "Markdown.",
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why this choice is right or wrong, shown after answering.",
+          "title": "Why"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "Choice",
+      "type": "object"
+    },
+    "Question": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Globally unique and stable, e.g. `de-sql-001`. Never reuse an id for different content.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "domain": {
+          "description": "Breadth axis, top level: ds = data science/ML, de = data engineering, cs = computer science, swe = software engineering, stack = modern tooling, infra = cloud/infrastructure.",
+          "enum": [
+            "ds",
+            "de",
+            "cs",
+            "swe",
+            "stack",
+            "infra"
+          ],
+          "title": "Domain",
+          "type": "string"
+        },
+        "topic": {
+          "description": "Breadth axis, second level, e.g. `sql`, `ml-eval`.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "title": "Topic",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "level": {
+          "description": "Depth axis: 1 junior/foundations, 2 junior+, 3 mid/applied, 4 senior/trade-offs, 5 staff/edge cases.",
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Level",
+          "type": "integer"
+        },
+        "kind": {
+          "description": "concept = understanding, practical = hands-on usage, internals = how it works underneath, design = trade-offs/architecture.",
+          "enum": [
+            "concept",
+            "practical",
+            "internals",
+            "design"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "type": {
+          "default": "single",
+          "description": "single: one correct choice; multi: select all that apply.",
+          "enum": [
+            "single",
+            "multi"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "Markdown; code blocks allowed.",
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "choices": {
+          "items": {
+            "$ref": "#/$defs/Choice"
+          },
+          "maxItems": 6,
+          "minItems": 2,
+          "title": "Choices",
+          "type": "array"
+        },
+        "answer": {
+          "description": "Ids of the correct choices.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Answer",
+          "type": "array"
+        },
+        "explanation": {
+          "description": "Markdown, shown after answering.",
+          "minLength": 1,
+          "title": "Explanation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "domain",
+        "topic",
+        "level",
+        "kind",
+        "prompt",
+        "choices",
+        "answer",
+        "explanation"
+      ],
+      "title": "Question",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "author": {
+      "default": "",
+      "title": "Author",
+      "type": "string"
+    },
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/Question"
+      },
+      "minItems": 1,
+      "title": "Questions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "questions"
+  ],
+  "title": "Deck",
+  "type": "object"
+}

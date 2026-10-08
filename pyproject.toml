@@ -1,0 +1,10 @@
+[project]
+name = "quizz"
+version = "0.1.0"
+description = "Adaptive quiz on data science, data engineering, CS, SWE, modern stack and infra, with a persistent learning history."
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2", "pyyaml", "typer", "fastapi", "uvicorn", "markdown-it-py", "pygments"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

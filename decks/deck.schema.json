@@ -47,10 +47,11 @@
           "type": "string"
         },
         "domain": {
-          "description": "Breadth axis, top level: ds = data science/ML, de = data engineering, cs = computer science, swe = software engineering, stack = modern tooling, infra = cloud/infrastructure.",
+          "description": "Breadth axis, top level: ds = Data science, de = Data engineering, mlops = MLOps, cs = Computer science, swe = Software engineering, stack = Modern stack, infra = Infra & ops.",
           "enum": [
             "ds",
             "de",
+            "mlops",
             "cs",
             "swe",
             "stack",

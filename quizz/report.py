@@ -15,9 +15,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from statistics import median
 
-from quizz.models import Question
+from quizz.models import DOMAIN_LABELS, Question
 
-DOMAINS = ["ds", "de", "cs", "swe", "stack", "infra"]
+DOMAINS = list(DOMAIN_LABELS)
 LEVELS = [1, 2, 3, 4, 5]
 CONFIDENCE = {1: "guess", 2: "unsure", 3: "sure"}
 

@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 SLUG_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
 Slug = Annotated[str, Field(pattern=SLUG_PATTERN)]
 
-Domain = Literal["ds", "de", "cs", "swe", "stack", "infra"]
+Domain = Literal["ds", "de", "mlops", "cs", "swe", "stack", "infra"]
 Kind = Literal["concept", "practical", "internals", "design"]
 QuestionType = Literal["single", "multi"]
 
@@ -21,10 +21,27 @@ QuestionType = Literal["single", "multi"]
 DOMAIN_LABELS: dict[str, str] = {
     "ds": "Data science",
     "de": "Data engineering",
+    "mlops": "MLOps",
     "cs": "Computer science",
     "swe": "Software engineering",
     "stack": "Modern stack",
-    "infra": "Cloud & infra",
+    "infra": "Infra & ops",
+}
+# What each domain covers; "occasionally" marks topics in scope but meant to stay a minority.
+DOMAIN_GUIDE: dict[str, str] = {
+    "ds": "statistics, ML modeling and evaluation, experimentation (A/B tests)",
+    "de": "SQL, pipelines, data modeling, warehousing, streaming, file formats; DataOps: orchestration, "
+    "data quality, lineage",
+    "mlops": "ML in production: experiment tracking, model registry, feature stores, training and serving "
+    "pipelines, drift monitoring",
+    "cs": "algorithms, data structures, complexity, operating systems, storage and database internals",
+    "swe": "code design, testing, APIs and HTTP, concurrency, version control, code-level observability; "
+    "occasionally: frontend basics (browser rendering, client-side state, web performance and accessibility)",
+    "stack": "modern languages, libraries and tools (Python, pandas, dbt, Docker...); occasionally: frontend "
+    "tooling (TypeScript, React, bundlers)",
+    "infra": "cloud, containers and Kubernetes, infrastructure as code, networking, deployment and CI/CD, "
+    "monitoring and SRE; occasionally: security (identity and access, OAuth/OIDC, secrets, TLS and "
+    "encryption, network security)",
 }
 LEVEL_GUIDE: dict[int, tuple[str, str]] = {
     1: ("junior", "foundations: core definitions and basic usage that anyone in the field should know"),
@@ -63,8 +80,9 @@ class Question(_Strict):
         description="Globally unique and stable, e.g. `de-sql-001`. Never reuse an id for different content."
     )
     domain: Domain = Field(
-        description="Breadth axis, top level: ds = data science/ML, de = data engineering, cs = computer "
-        "science, swe = software engineering, stack = modern tooling, infra = cloud/infrastructure."
+        description="Breadth axis, top level: "
+        + ", ".join(f"{d} = {label}" for d, label in DOMAIN_LABELS.items())
+        + "."
     )
     topic: Slug = Field(description="Breadth axis, second level, e.g. `sql`, `ml-eval`.")
     tags: list[Slug] = Field(default_factory=list)

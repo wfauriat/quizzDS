@@ -2,7 +2,8 @@
 
 The Design tab turns a per-domain request (target level, number of questions, optional focus) into
 a self-contained prompt for an LLM. The deck the LLM writes is then pasted back and imported here,
-with the same checks as a hand-written deck plus id collisions and the answer-length lint.
+with the same checks as a hand-written deck plus the answer-length lint; question ids that clash
+with other decks are renumbered.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from quizz.decks import DeckError, length_bias_warning, load_decks
 from quizz.models import (
+    DOMAIN_GUIDE,
     DOMAIN_LABELS,
     KIND_GUIDE,
     LEVEL_GUIDE,
@@ -47,6 +49,9 @@ class DesignRequest(BaseModel):
     multi_share: int = Field(15, ge=0, le=100, description="Percentage of 'select all that apply' questions.")
     kinds: dict[Kind, Annotated[int, Field(ge=0)]] | None = Field(
         None, description="Relative weights of the question kinds; null lets the LLM mix them."
+    )
+    avoid_existing: bool = Field(
+        True, description="List the existing questions in the prompt so the new deck doesn't repeat them."
     )
 
     @model_validator(mode="after")
@@ -96,7 +101,7 @@ description: >-
 author: "model-name 2026-01-31"
 questions:
   - id: stack-example-001          # <domain>-<topic>-NNN, globally unique
-    domain: stack                  # ds | de | cs | swe | stack | infra
+    domain: stack                  # ds | de | mlops | cs | swe | stack | infra
     topic: example                 # lowercase slug
     tags: [lists, sorting]         # lowercase slugs
     level: 2                       # 1-5
@@ -134,7 +139,7 @@ def build_prompt(req: DesignRequest, existing: list[Deck], deck_id: str, today: 
     rows = sorted((d for d in req.domains if d.count), key=lambda d: DOMAIN_ORDER.index(d.domain))
     n = req.total
     table = "\n".join(
-        f"| `{d.domain}` | {DOMAIN_LABELS[d.domain].lower()} | {level_label(d.level)} | {d.count} | "
+        f"| `{d.domain}` | {DOMAIN_LABELS[d.domain]} | {level_label(d.level)} | {d.count} | "
         f"{d.focus.strip() or '—'} |"
         for d in rows
     )
@@ -154,17 +159,34 @@ def build_prompt(req: DesignRequest, existing: list[Deck], deck_id: str, today: 
     else:
         counts = apportion(n, {k: w for k, w in req.kinds.items() if w})
         kind_rule = "about " + ", ".join(f"{c} {k}" for k, c in counts.items() if c) + "."
+    domains = "\n".join(f"- `{d}` ({DOMAIN_LABELS[d]}): {text}" for d, text in DOMAIN_GUIDE.items())
     levels = "\n".join(f"- {level_label(lv)}: {text}" for lv, (_, text) in LEVEL_GUIDE.items())
     kinds = "\n".join(f"- `{k}`: {text}" for k, text in KIND_GUIDE.items())
     schema = json.dumps(deck_json_schema(), indent=1, ensure_ascii=False)
+    if req.avoid_existing:
+        id_rule = (
+            'be unique: never reuse an id listed under "Existing questions"; for a topic that already exists,\n'
+            "   continue its numbering."
+        )
+        existing_section = (
+            "## Existing questions\n\nDon't reuse these ids, and avoid testing the same facts again:\n\n"
+            f"{_existing_questions(existing)}\n\n"
+        )
+    else:
+        id_rule = (
+            "be unique within the deck: number each topic's questions from 001 (the app renumbers\n"
+            "   ids that other decks already use)."
+        )
+        existing_section = ""
 
     return f"""# Write a quiz deck for quizzDS
 
-quizzDS is a personal quiz app for a learner in data science, data engineering, computer science,
-software engineering, modern tooling and cloud infrastructure. Decks are YAML files. The app
-shuffles the choices, grades the answers, shows each choice's `why` and the question's
-`explanation` after answering, and keeps a history used to track progress by domain, topic and
-level. Questions must therefore be accurate, unambiguous and pitched at the requested level.
+quizzDS is a personal quiz app for a learner in data science, data engineering, MLOps, computer
+science, software engineering, modern tooling, and cloud infrastructure and operations. Decks are
+YAML files. The app shuffles the choices, grades the answers, shows each choice's `why` and the
+question's `explanation` after answering, and keeps a history used to track progress by domain,
+topic and level. Questions must therefore be accurate, unambiguous and pitched at the requested
+level.
 
 ## The deck to write
 
@@ -182,7 +204,11 @@ level. Questions must therefore be accurate, unambiguous and pitched at the requ
 - Question types: {type_rule}
 - Kinds: {kind_rule}
 
-## Levels and kinds
+## Domains, levels and kinds
+
+Domains (`domain`): put each question in the domain whose scope it fits. Topics marked
+"occasionally" should be a minority of a domain's questions, unless its focus asks for them.
+{domains}
 
 Levels (`level`):
 {levels}
@@ -208,8 +234,7 @@ Kinds (`kind`):
 6. Facts must be correct and current. State versions when the behaviour depends on them. If you are
    not sure of a fact, write a different question.
 7. Question ids follow `<domain>-<topic>-NNN` (lowercase, hyphens), e.g. `de-streaming-002`. They must
-   be unique: never reuse an id listed under "Existing questions"; for a topic that already exists,
-   continue its numbering. `topic` and `tags` are lowercase slugs too.
+   {id_rule} `topic` and `tags` are lowercase slugs too.
 8. Ids, topics and tags must not reveal the answer.
 
 ## Format
@@ -225,13 +250,7 @@ An annotated example with one question:
 ```yaml
 {EXAMPLE_DECK}```
 
-## Existing questions
-
-Don't reuse these ids, and avoid testing the same facts again:
-
-{_existing_questions(existing)}
-
-## How to deliver
+{existing_section}## How to deliver
 
 - If you can write files in the quizzDS repository (e.g. Claude Code): write `decks/{deck_id}.yaml`,
   run `/opt/venvs/pyDS/bin/python -m quizz validate` and fix any problem it reports, then run
@@ -280,11 +299,52 @@ def _validation_errors(e: ValidationError, data: object) -> list[str]:
     return errors
 
 
-def save_generated_deck(text: str, decks_dir: Path, today: date) -> tuple[Deck, Path]:
+_NUMBERED_ID = re.compile(r"^(?P<stem>.+)-(?P<n>\d+)$")
+
+
+def _renumber_clashes(deck: Deck, body: str, known: dict[str, Question]) -> tuple[Deck, str, dict[str, str]]:
+    """Give a new number to each question whose id another deck uses for different content.
+
+    The YAML text is edited in place (``id:`` lines only) to keep the LLM's formatting. If that edit
+    can't be done safely, nothing is renamed and the clash is reported as an error by the caller.
+    """
+    clashes = [q.id for q in deck.questions if q.id in known and known[q.id] != q]
+    if not clashes:
+        return deck, body, {}
+    taken = set(known) | {q.id for q in deck.questions}
+    renamed: dict[str, str] = {}
+    for old in clashes:
+        match = _NUMBERED_ID.match(old)
+        stem, width = (match["stem"], len(match["n"])) if match else (old, 3)
+        numbers = [int(m["n"]) for i in taken if (m := _NUMBERED_ID.match(i)) and m["stem"] == stem]
+        new = f"{stem}-{max(numbers, default=0) + 1:0{width}d}"
+        taken.add(new)
+        renamed[old] = new
+
+    id_line = re.compile(
+        r"^(?P<key>[ \t]*(?:-[ \t]+)?id:[ \t]*)(?P<q>[\"']?)(?P<id>" + "|".join(map(re.escape, renamed)) + r")(?P=q)"
+        r"(?P<rest>[ \t]*(?:#.*)?)$",
+        flags=re.M,
+    )
+    new_body = id_line.sub(lambda m: f"{m['key']}{m['q']}{renamed[m['id']]}{m['q']}{m['rest']}", body)
+    expected = deck.model_copy(
+        update={"questions": [q.model_copy(update={"id": renamed.get(q.id, q.id)}) for q in deck.questions]}
+    )
+    try:
+        new_deck = Deck.model_validate(yaml.safe_load(new_body))
+    except (yaml.YAMLError, ValidationError):
+        return deck, body, {}
+    if new_deck != expected:  # e.g. flow-style YAML, or an id line inside a prompt
+        return deck, body, {}
+    return new_deck, new_body, renamed
+
+
+def save_generated_deck(text: str, decks_dir: Path, today: date) -> tuple[Deck, Path, dict[str, str]]:
     """Validate a generated deck and save it as ``decks/<id>.yaml``.
 
-    Raises ``Invalid`` with one problem per line (phrased so it can be sent back to the LLM),
-    or ``Conflict`` if the file already exists.
+    Question ids already used by other decks for different content are renumbered; the third
+    value maps each old id to its new one. Raises ``Invalid`` with one problem per line (phrased
+    so it can be sent back to the LLM), or ``Conflict`` if the file already exists.
     """
     body = _strip_fences(text).strip()
     try:
@@ -301,6 +361,7 @@ def save_generated_deck(text: str, decks_dir: Path, today: date) -> tuple[Deck, 
     except DeckError as e:
         raise Invalid("fix the existing decks first:\n" + "\n".join(e.errors)) from e
     known = {q.id: q for _, d in existing for q in d.questions}
+    deck, body, renamed = _renumber_clashes(deck, body, known)
     errors = []
     if deck.id in {d.id for _, d in existing}:
         errors.append(f"deck id {deck.id!r} is already used: choose another `id`")
@@ -322,4 +383,4 @@ def save_generated_deck(text: str, decks_dir: Path, today: date) -> tuple[Deck, 
         f"# Generated by an LLM from a Design-tab prompt, imported on {today.isoformat()}.\n"
     )
     path.write_text(header + body + "\n", encoding="utf-8")
-    return deck, path
+    return deck, path, renamed

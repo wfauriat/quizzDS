@@ -21,6 +21,7 @@ interface Form {
   multiShare: number;
   customKinds: boolean;
   kinds: Record<Kind, number>;
+  avoidExisting: boolean;
 }
 
 const DEFAULT_FORM: Form = {
@@ -30,13 +31,18 @@ const DEFAULT_FORM: Form = {
   multiShare: 15,
   customKinds: false,
   kinds: { concept: 25, practical: 25, internals: 25, design: 25 },
+  avoidExisting: true,
 };
 
 // The last design is remembered in this browser only (a convenience, not data).
 function loadForm(): Form {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? { ...DEFAULT_FORM, ...JSON.parse(saved) } : DEFAULT_FORM;
+    if (!saved) return DEFAULT_FORM;
+    const form: Form = { ...DEFAULT_FORM, ...JSON.parse(saved) };
+    // One row per current domain, in order: a form saved before a domain was added still gets its row.
+    const rows = new Map(form.domains.map((d) => [d.domain, d]));
+    return { ...form, domains: DEFAULT_FORM.domains.map((d) => rows.get(d.domain) ?? { ...d, count: 0 }) };
   } catch {
     return DEFAULT_FORM;
   }
@@ -70,6 +76,8 @@ export function Design({ onImported }: Props) {
   }, [form]);
 
   const total = form.domains.reduce((n, d) => n + d.count, 0);
+  const isDefault = JSON.stringify(form) === JSON.stringify(DEFAULT_FORM);
+  const renamedCount = imported ? Object.keys(imported.renamed).length : 0;
 
   function update<K extends keyof Form>(key: K, value: Form[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -83,6 +91,12 @@ export function Design({ onImported }: Props) {
     );
   }
 
+  function reset() {
+    setForm(DEFAULT_FORM);
+    setPrompt(null);
+    setPromptError(null);
+  }
+
   async function generate() {
     setPromptError(null);
     setCopied(false);
@@ -92,6 +106,7 @@ export function Design({ onImported }: Props) {
       spread: form.spread,
       multi_share: form.multiShare,
       kinds: form.customKinds ? form.kinds : null,
+      avoid_existing: form.avoidExisting,
     };
     try {
       setPrompt(await api.designPrompt(body));
@@ -182,7 +197,7 @@ export function Design({ onImported }: Props) {
                 className="domain-focus"
                 type="text"
                 value={d.focus}
-                placeholder="e.g. Kafka, Spark"
+                placeholder="e.g. Spark, dbt, tests, ..."
                 aria-label={`${DOMAIN_LABELS[d.domain]} focus`}
                 onChange={(e) => updateDomain(d.domain, { focus: e.target.value })}
               />
@@ -206,6 +221,17 @@ export function Design({ onImported }: Props) {
           <label className="check">
             <input type="checkbox" checked={form.spread} onChange={(e) => update("spread", e.target.checked)} />
             Allow ±1 level variety
+          </label>
+          <label
+            className="check"
+            title="Lists the questions already in decks/ in the prompt so the new deck doesn't repeat them. Untick for an independent deck and a shorter prompt."
+          >
+            <input
+              type="checkbox"
+              checked={form.avoidExisting}
+              onChange={(e) => update("avoidExisting", e.target.checked)}
+            />
+            Avoid existing questions
           </label>
         </div>
 
@@ -239,6 +265,15 @@ export function Design({ onImported }: Props) {
           <span className="muted">
             {total} question{total === 1 ? "" : "s"}
           </span>
+          <button
+            type="button"
+            className="btn design-reset"
+            disabled={isDefault}
+            title="Back to the default title, levels, counts, focus and options"
+            onClick={reset}
+          >
+            Reset
+          </button>
           <button type="button" className="btn btn-primary" disabled={total === 0} onClick={generate}>
             Generate prompt
           </button>
@@ -304,6 +339,8 @@ export function Design({ onImported }: Props) {
           <p className="success">
             Imported <strong>{imported.title}</strong> ({imported.n_questions} question
             {imported.n_questions === 1 ? "" : "s"}, decks/{imported.file}).{" "}
+            {renamedCount > 0 &&
+              `${renamedCount} question id${renamedCount === 1 ? " was" : "s were"} renumbered: other decks already used ${renamedCount === 1 ? "it" : "them"}. `}
             <button type="button" className="link" onClick={onImported}>
               Go to decks →
             </button>

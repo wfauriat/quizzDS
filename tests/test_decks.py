@@ -1,10 +1,11 @@
 import json
+from typing import get_args
 
 import pytest
 from pydantic import ValidationError
 
 from quizz.decks import DECKS_DIR, DeckError, length_bias_warning, load_decks, longest_choice_bias
-from quizz.models import Deck, Question, deck_json_schema
+from quizz.models import DOMAIN_GUIDE, DOMAIN_LABELS, Deck, Domain, Question, deck_json_schema
 from tests.helpers import make_question, write_deck
 
 
@@ -32,6 +33,11 @@ def test_length_bias_warning_needs_enough_questions():
               for i in range(8)]
     assert "8/8" in length_bias_warning(Deck.model_validate({"id": "d", "title": "d", "questions": biased}))
     assert length_bias_warning(Deck.model_validate({"id": "d", "title": "d", "questions": biased[:7]})) is None
+
+
+def test_every_domain_has_a_label_and_a_scope():
+    # Same order: reports and the Design tab use it.
+    assert list(DOMAIN_LABELS) == list(DOMAIN_GUIDE) == list(get_args(Domain))
 
 
 def test_schema_file_is_up_to_date():

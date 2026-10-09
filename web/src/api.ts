@@ -2,7 +2,7 @@
 
 export type Mode = "learn" | "exam";
 export type Confidence = 1 | 2 | 3; // guess, unsure, sure
-export type Domain = "ds" | "de" | "cs" | "swe" | "stack" | "infra";
+export type Domain = "ds" | "de" | "mlops" | "cs" | "swe" | "stack" | "infra";
 export type Kind = "concept" | "practical" | "internals" | "design";
 
 export interface SessionStats {
@@ -111,6 +111,7 @@ export interface DesignRequest {
   spread: boolean;
   multi_share: number;
   kinds: Partial<Record<Kind, number>> | null; // null: let the LLM mix the kinds
+  avoid_existing: boolean; // list the existing questions so the deck doesn't repeat them
 }
 
 export interface DesignPrompt {
@@ -124,6 +125,7 @@ export interface ImportedDeck {
   title: string;
   n_questions: number;
   file: string;
+  renamed: Record<string, string>; // question ids renumbered because other decks use them: old → new
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {

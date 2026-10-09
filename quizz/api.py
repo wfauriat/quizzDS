@@ -73,6 +73,7 @@ class ImportedDeck(BaseModel):
     title: str
     n_questions: int
     file: str
+    renamed: dict[str, str] = Field(description="Question ids renumbered because other decks use them: old → new.")
 
 
 class Feedback(BaseModel):
@@ -157,9 +158,11 @@ def design_prompt(body: design.DesignRequest, request: Request, db: Db) -> desig
 def design_import(body: GeneratedDeckIn, request: Request, db: Db) -> ImportedDeck:
     """Validate a generated deck, save it in decks/ and load it, ready to play."""
     decks_dir = request.app.state.decks_dir
-    deck, path = design.save_generated_deck(body.text, decks_dir, date.today())
+    deck, path, renamed = design.save_generated_deck(body.text, decks_dir, date.today())
     import_decks(db, load_decks(decks_dir))
-    return ImportedDeck(deck_id=deck.id, title=deck.title, n_questions=len(deck.questions), file=path.name)
+    return ImportedDeck(
+        deck_id=deck.id, title=deck.title, n_questions=len(deck.questions), file=path.name, renamed=renamed
+    )
 
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

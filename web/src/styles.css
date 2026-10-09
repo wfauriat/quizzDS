@@ -553,6 +553,9 @@ textarea {
   align-items: center;
   gap: 12px;
 }
+.design-reset {
+  margin-left: auto; /* next to "Generate prompt", away from the count */
+}
 .prompt-text,
 .deck-input {
   width: 100%;

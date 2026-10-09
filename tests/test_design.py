@@ -49,8 +49,9 @@ def test_prompt_describes_the_requested_deck():
     prompt = build_prompt(request(), existing, "streaming-concurrency", TODAY)
     assert "`id`: `streaming-concurrency` · `title`: \"Streaming & concurrency\" · **7 questions**" in prompt
     # Rows in domain order, empty domains left out.
-    assert "| `de` | data engineering | L4 · senior | 4 | Kafka, Spark streaming |\n| `stack`" in prompt
+    assert "| `de` | Data engineering | L4 · senior | 4 | Kafka, Spark streaming |\n| `stack`" in prompt
     assert "| `ds` |" not in prompt
+    assert "- `infra` (Infra & ops): cloud," in prompt  # every domain's scope, to place questions
     assert "Every question must be exactly at its domain's target level." in prompt
     assert "1 `multi` question(s)" in prompt  # 15% of 7, rounded
     assert "Kinds: mix the four kinds" in prompt
@@ -70,6 +71,14 @@ def test_prompt_options():
     assert "Only `single` questions" in prompt
     assert "Kinds: about 3 practical, 2 internals, 2 design." in prompt
     assert "(none yet)" in prompt
+
+
+def test_prompt_can_ignore_existing_questions():
+    existing = [Deck.model_validate({"id": "d", "title": "d", "questions": [make_question()]})]
+    assert "## Existing questions" in build_prompt(request(), existing, "x", TODAY)
+    prompt = build_prompt(request(avoid_existing=False), existing, "x", TODAY)
+    assert "Existing questions" not in prompt and "cs-test-001" not in prompt
+    assert "the app renumbers\n   ids that other decks already use" in prompt
 
 
 @pytest.mark.parametrize(
@@ -97,8 +106,8 @@ def test_helpers():
 
 def test_import_saves_a_valid_deck_from_a_whole_llm_reply(decks_dir):
     reply = f"Here is your deck:\n\n```yaml\n{generated()}```\n\nEnjoy!"
-    deck, path = save_generated_deck(reply, decks_dir, TODAY)
-    assert (deck.id, path.name) == ("new-deck", "new-deck.yaml")
+    deck, path, renamed = save_generated_deck(reply, decks_dir, TODAY)
+    assert (deck.id, path.name, renamed) == ("new-deck", "new-deck.yaml", {})
     assert path.read_text(encoding="utf-8").startswith("# yaml-language-server: $schema=./deck.schema.json\n")
     assert {d.id for _, d in load_decks(decks_dir)} == {"old-deck", "new-deck"}
 
@@ -109,7 +118,13 @@ def test_import_saves_a_valid_deck_from_a_whole_llm_reply(decks_dir):
         ("id: [unclosed", "not valid YAML"),
         (generated(questions=[make_question(id="cs-new-001", answer=["z"])]), "questions.0 (id cs-new-001)"),
         (generated(deck_id="old-deck"), "deck id 'old-deck' is already used"),
-        (generated(questions=[make_question(prompt="Another question?")]), "'cs-test-001' is already used"),
+        (  # a clashing id that can't be renumbered: flow-style YAML has no `id:` lines to edit
+            yaml.safe_dump(
+                {"id": "new-deck", "title": "t", "questions": [make_question(prompt="Another question?")]},
+                default_flow_style=True,
+            ),
+            "'cs-test-001' is already used",
+        ),
         (
             generated(
                 questions=[
@@ -128,8 +143,19 @@ def test_import_rejects_problems_with_actionable_messages(decks_dir, text, messa
 
 
 def test_import_accepts_a_question_identical_to_an_existing_one(decks_dir):
-    deck, _ = save_generated_deck(generated(questions=[make_question()]), decks_dir, TODAY)
-    assert deck.questions[0].id == "cs-test-001"
+    deck, _, renamed = save_generated_deck(generated(questions=[make_question()]), decks_dir, TODAY)
+    assert deck.questions[0].id == "cs-test-001" and renamed == {}
+
+
+def test_import_renumbers_ids_used_by_other_decks(decks_dir):
+    # old-deck owns cs-test-001; the new deck reuses that id for a different question.
+    questions = [make_question(prompt="Another question?"), make_question(id="cs-test-002", prompt="Third?")]
+    deck, path, renamed = save_generated_deck(generated(questions=questions), decks_dir, TODAY)
+    assert renamed == {"cs-test-001": "cs-test-003"}
+    assert [q.id for q in deck.questions] == ["cs-test-003", "cs-test-002"]
+    text = path.read_text(encoding="utf-8")
+    assert "id: cs-test-003" in text and "cs-test-001" not in text
+    assert {d.id for _, d in load_decks(decks_dir)} == {"old-deck", "new-deck"}  # consistent across decks
 
 
 def test_import_never_overwrites_a_file(decks_dir):
@@ -163,7 +189,13 @@ def test_design_endpoints_round_trip(client):
 
     r = client.post("/api/design/import", json={"text": generated()})
     assert r.status_code == 201, r.text
-    assert r.json() == {"deck_id": "new-deck", "title": "New deck", "n_questions": 2, "file": "new-deck.yaml"}
+    assert r.json() == {
+        "deck_id": "new-deck",
+        "title": "New deck",
+        "n_questions": 2,
+        "file": "new-deck.yaml",
+        "renamed": {},
+    }
     assert "new-deck" in [d["id"] for d in client.get("/api/decks").json()]  # playable right away
 
     r = client.post("/api/design/import", json={"text": generated()})

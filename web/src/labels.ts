@@ -3,10 +3,11 @@ import type { Confidence, Domain } from "./api";
 export const DOMAIN_LABELS: Record<Domain, string> = {
   ds: "Data science",
   de: "Data engineering",
+  mlops: "MLOps",
   cs: "Computer science",
   swe: "Software engineering",
   stack: "Modern stack",
-  infra: "Cloud & infra",
+  infra: "Infra & ops",
 };
 
 export const LEVEL_LABELS: Record<string, string> = {

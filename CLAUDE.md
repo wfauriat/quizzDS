@@ -40,7 +40,8 @@ Run from the repo root with the venv `/opt/venvs/pyDS` (`PY=/opt/venvs/pyDS/bin/
 - `$PY -m pytest -q`
 - UI tabs: Decks (play), History (review or delete past sessions), Design. Design builds a prompt asking an LLM to
   write a deck with a chosen level and size per domain (`quizz/design.py`), then validates and imports the
-  pasted reply into `decks/<id>.yaml`, rejecting id collisions and the answer-length bias.
+  pasted reply into `decks/<id>.yaml`. The import rejects the answer-length bias and renumbers question
+  ids that other decks already use. "Avoid existing questions" (on by default) lists them in the prompt.
 
 ### Session loop
 1. Read `notes/learner.md`, then run `$PY -m quizz report`. Accuracy counts first attempts only;
@@ -56,6 +57,9 @@ Run from the repo root with the venv `/opt/venvs/pyDS` (`PY=/opt/venvs/pyDS/bin/
 - Question ids follow `<domain>-<topic>-NNN`. They are globally unique and never reused for different
   content. Typos can be fixed in place (revisions are kept by hash), but a changed meaning needs a
   new id.
+- Domain scopes are in `DOMAIN_GUIDE` (`quizz/models.py`), which the Design prompt includes. In short:
+  DataOps goes in `de`, security in `infra`, and frontend in `swe` (concepts) or `stack` (tools); the
+  last two are "occasionally" topics, kept a minority. Questions written before 2026-10-09 keep their domain.
 - Every question needs an `explanation` and a `why` on every choice, usually 4 choices. Multi-select
   prompts say "Select all that apply".
 - `validate` lints whether the correct choice is the longest one; aim for 10–40%

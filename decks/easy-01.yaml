@@ -1,0 +1,670 @@
+# yaml-language-server: $schema=./deck.schema.json
+id: easy-01
+title: "Easy #1 — foundations (L1–L2)"
+description: >-
+  20 foundation questions (levels 1–2 only) across all six domains: ML basics, SQL and
+  modeling, algorithms, web and testing, Python tooling, cloud basics.
+author: "claude 2026-10-08"
+questions:
+
+  # ---------------------------------------------------------------- level 1
+  - id: ds-ml-fundamentals-001
+    domain: ds
+    topic: ml-fundamentals
+    tags: [overfitting, generalization]
+    level: 1
+    kind: concept
+    type: single
+    prompt: |
+      A model reaches **99% accuracy on its training data** but only **70% on held-out test data**.
+      What is the most likely diagnosis?
+    choices:
+      - id: a
+        text: "Underfitting: the model is too simple to capture the patterns"
+        why: "An underfit model also does poorly on the training data. Here, training accuracy is excellent."
+      - id: b
+        text: "Overfitting: the model memorized its training data instead of generalizing"
+        why: "Correct. A large gap between training and test performance is the signature of overfitting."
+      - id: c
+        text: "The test set is too large to give a reliable score"
+        why: "A larger test set gives a *more* reliable estimate; it doesn't lower the score."
+      - id: d
+        text: "The learning rate is too low"
+        why: "A learning rate that is too low usually leaves the *training* accuracy low (the model hasn't converged), which isn't the case here."
+    answer: [b]
+    explanation: |
+      **Overfitting** means the model learned noise and quirks of the training set that don't
+      generalize. Typical remedies: more data, a simpler model, regularization (L1/L2, dropout,
+      limited tree depth…), early stopping, and cross-validation to detect the problem. The opposite,
+      **underfitting**, shows up as poor performance on *both* training and test data.
+
+  - id: de-sql-002
+    domain: de
+    topic: sql
+    tags: [group-by, having, aggregation]
+    level: 1
+    kind: practical
+    type: single
+    prompt: |
+      You want the customers who placed **more than 5 orders**:
+
+      ```sql
+      SELECT customer_id, COUNT(*) AS n_orders
+      FROM orders
+      GROUP BY customer_id
+      ______ COUNT(*) > 5;
+      ```
+
+      Which keyword fills the blank?
+    choices:
+      - id: a
+        text: "`WHERE`"
+        why: "`WHERE` filters rows *before* grouping, so it can't use an aggregate like `COUNT(*)`."
+      - id: b
+        text: "`HAVING`"
+        why: "Correct. `HAVING` filters groups *after* aggregation."
+      - id: c
+        text: "`FILTER`"
+        why: "`COUNT(*) FILTER (WHERE …)` restricts which rows an aggregate counts; it doesn't remove groups."
+      - id: d
+        text: "`QUALIFY`"
+        why: "`QUALIFY` (in the engines that support it) filters on window-function results. For group aggregates, the standard keyword is `HAVING`."
+    answer: [b]
+    explanation: |
+      The logical order of a query is: `FROM` → `WHERE` (filter rows) → `GROUP BY` → `HAVING` (filter
+      groups) → `SELECT` → `ORDER BY`. Use `WHERE` for conditions on individual rows (it's cheaper, since
+      it reduces the data before grouping) and `HAVING` for conditions on aggregates.
+
+  - id: cs-algorithms-001
+    domain: cs
+    topic: algorithms
+    tags: [binary-search, complexity]
+    level: 1
+    kind: concept
+    type: single
+    prompt: |
+      With binary search on a **sorted** array of 1,000,000 elements, roughly how many comparisons
+      are needed in the worst case to find an element (or to conclude it's absent)?
+    choices:
+      - id: a
+        text: "About 1,000"
+        why: "That would be √n. Binary search is logarithmic, not square-root."
+      - id: b
+        text: "About 500,000"
+        why: "That's the *average* cost of a linear scan, which checks elements one by one."
+      - id: c
+        text: "About 20"
+        why: "Correct. Each comparison halves the range, and 2²⁰ ≈ 1,000,000, so log₂(10⁶) ≈ 20."
+      - id: d
+        text: "Exactly 1,000,000"
+        why: "That's the worst case of a linear scan."
+    answer: [c]
+    explanation: |
+      Binary search compares the target with the middle element and discards half of the remaining
+      range at each step, so it needs about log₂(n) steps: **O(log n)**. It requires sorted data with
+      random access. Doubling the data adds just one comparison: 2 million elements need ~21.
+
+  - id: swe-http-001
+    domain: swe
+    topic: http
+    tags: [status-codes, rest]
+    level: 1
+    kind: concept
+    type: single
+    prompt: |
+      A client sends `GET /users/42`, but no user with id 42 exists. Which HTTP status code should
+      the API return?
+    choices:
+      - id: a
+        text: "`200 OK` with an empty body"
+        why: "200 means success. Hiding a missing resource behind a 200 makes errors hard for clients to detect."
+      - id: b
+        text: "`500 Internal Server Error`"
+        why: "5xx codes mean the *server* failed. A missing resource is a client-side situation (4xx)."
+      - id: c
+        text: "`401 Unauthorized`"
+        why: "401 means the client isn't authenticated; it says nothing about whether the user exists."
+      - id: d
+        text: "`404 Not Found`"
+        why: "Correct: the requested resource doesn't exist."
+    answer: [d]
+    explanation: |
+      Status code families: **2xx** success, **3xx** redirection, **4xx** client errors (400 bad
+      request, 401 not authenticated, 403 forbidden, 404 not found, 409 conflict, 422 validation
+      error), **5xx** server errors (500, 502 bad gateway, 503 unavailable). Using them correctly lets
+      clients, monitoring and retry logic behave sensibly: retrying a 503 can make sense, retrying a
+      404 doesn't.
+
+  - id: stack-python-tooling-001
+    domain: stack
+    topic: python-tooling
+    tags: [venv, dependencies]
+    level: 1
+    kind: concept
+    type: single
+    prompt: |
+      Why create a **virtual environment** (`python -m venv .venv`) for each Python project?
+    choices:
+      - id: a
+        text: "It makes Python code run faster"
+        why: "A venv doesn't change execution speed; it only changes where packages are installed and looked up."
+      - id: b
+        text: "It isolates each project's installed packages and versions"
+        why: "Correct. Project A can use pandas 1.x while project B uses 2.x, without conflicts."
+      - id: c
+        text: "It is required to run any Python script"
+        why: "Python runs fine without one. A venv is a best practice, not a requirement."
+      - id: d
+        text: "It sandboxes the code for security, like a lightweight container"
+        why: "A venv is just a directory with its own `site-packages` and a link to an interpreter. It gives no security isolation."
+    answer: [b]
+    explanation: |
+      Without isolation, every project shares one global set of packages, so upgrading a library for
+      project A can break project B. A venv gives each project its own packages. Pin them in a
+      requirements or lock file (pip, uv, Poetry…) to reproduce the environment elsewhere. To isolate
+      system-level dependencies, or the OS itself, use containers.
+
+  - id: infra-cloud-storage-001
+    domain: infra
+    topic: cloud-storage
+    tags: [object-storage, s3]
+    level: 1
+    kind: concept
+    type: single
+    prompt: |
+      An app needs to store **millions of user-uploaded images** and serve them over HTTP.
+      Which cloud storage type fits best?
+    choices:
+      - id: a
+        text: "Object storage, such as Amazon S3, Google Cloud Storage or Azure Blob Storage"
+        why: "Correct: virtually unlimited capacity, pay per GB, durable, and each object is addressable over HTTP (often behind a CDN)."
+      - id: b
+        text: "A block storage volume attached to the application's virtual machine"
+        why: "A block volume is a virtual disk tied to one machine, with a fixed size to manage, and it doesn't serve files over HTTP by itself."
+      - id: c
+        text: "A BLOB column in the relational database"
+        why: "Possible, but it bloats the database, slows down backups and wastes expensive database resources on serving static files."
+      - id: d
+        text: "The local disk of the web server"
+        why: "Local disks are lost when the instance is replaced, and they don't scale beyond one machine."
+    answer: [a]
+    explanation: |
+      **Object storage** is the default home for unstructured files (images, logs, backups, data-lake
+      files). It is durable (several copies), cheap, elastic and accessible by URL or API. The
+      application's database usually stores only the object key or URL. Block storage provides the
+      disks of VMs and databases; file storage (NFS-like) provides shared POSIX file systems.
+
+  - id: ds-stats-002
+    domain: ds
+    topic: stats
+    tags: [descriptive-statistics, outliers, median]
+    level: 1
+    kind: concept
+    type: single
+    prompt: |
+      In a team of 10 people, nine earn around €50k per year and the founder earns €2M.
+      Which statistic best describes a *typical* salary in this team?
+    choices:
+      - id: a
+        text: "The mean (≈ €245k)"
+        why: "The mean is pulled up by a single extreme value: nobody in the team earns anything close to €245k."
+      - id: b
+        text: "The median (€50k)"
+        why: "Correct. The middle value is barely affected by an extreme outlier."
+      - id: c
+        text: "The maximum (€2M)"
+        why: "The maximum describes the extreme case, not the typical one."
+      - id: d
+        text: "The standard deviation"
+        why: "It measures how spread out the values are, not what a typical value is."
+    answer: [b]
+    explanation: |
+      The **mean** is sensitive to outliers; the **median** (the 50th percentile) is robust to them.
+      For skewed distributions (salaries, house prices, response times…), report the median, plus
+      percentiles such as p90 or p99 to describe the tail. A large gap between mean and median is
+      itself a sign that the distribution is skewed.
+
+  - id: de-warehousing-001
+    domain: de
+    topic: warehousing
+    tags: [olap, oltp]
+    level: 1
+    kind: concept
+    type: single
+    prompt: |
+      Which query is most typical of an **analytical (OLAP)** workload, the kind a data warehouse
+      such as BigQuery, Snowflake or Redshift is built for?
+    choices:
+      - id: a
+        text: "Update the shipping address of order #1234 after a customer request"
+        why: "A single-row update is a transactional (OLTP) operation, the job of the application's database (e.g. PostgreSQL, MySQL)."
+      - id: b
+        text: "Insert a new user account when someone signs up"
+        why: "This is another OLTP operation: a small, frequent write of an individual row."
+      - id: c
+        text: "Total revenue per product category for each month since 2023"
+        why: "Correct: an aggregation that scans many rows but only a few columns."
+      - id: d
+        text: "Fetch the profile of user #42 to display it on their account page"
+        why: "A point lookup by key is typical OLTP, best served by an indexed, row-oriented database."
+    answer: [c]
+    explanation: |
+      **OLTP** (online transaction processing) means many small reads and writes of individual rows,
+      low latency, and row-oriented storage with indexes. **OLAP** (online analytical processing) means
+      fewer but heavy queries that aggregate large volumes, served by columnar storage and massively
+      parallel scans. Data usually flows from OLTP systems into the warehouse through ELT/ETL pipelines.
+
+  - id: cs-data-structures-002
+    domain: cs
+    topic: data-structures
+    tags: [stack, queue, lifo]
+    level: 1
+    kind: concept
+    type: single
+    prompt: |
+      A browser's **Back** button returns to the most recently visited page first, then the one
+      before it, and so on. Which data structure models this best?
+    choices:
+      - id: a
+        text: "A queue (first in, first out)"
+        why: "A queue would return the *oldest* page first."
+      - id: b
+        text: "A hash map"
+        why: "A hash map gives fast lookup by key, but it keeps no record of the order of visits."
+      - id: c
+        text: "A stack (last in, first out)"
+        why: "Correct: push each visited page, and pop to go back."
+      - id: d
+        text: "A binary search tree"
+        why: "A binary search tree keeps keys sorted, not in the order they were visited."
+    answer: [c]
+    explanation: |
+      A **stack** is LIFO: push and pop happen at the same end, both in O(1). Other classic uses are
+      undo/redo (two stacks), the function call stack, matching parentheses and depth-first search.
+      A **queue** is FIFO: task queues, breadth-first search, buffering.
+
+  - id: stack-pandas-001
+    domain: stack
+    topic: pandas
+    tags: [groupby, aggregation]
+    level: 1
+    kind: practical
+    type: single
+    prompt: |
+      Given a DataFrame of transactions with columns `country` and `amount`, what does this return?
+
+      ```python
+      df.groupby("country")["amount"].sum()
+      ```
+    choices:
+      - id: a
+        text: "A single number: the sum of all amounts"
+        why: "That would be `df['amount'].sum()`, without grouping."
+      - id: b
+        text: "A Series with one total per country, indexed by the country names"
+        why: "Correct. Use `.reset_index()`, or `groupby(..., as_index=False)`, to get a DataFrame with `country` as a column."
+      - id: c
+        text: "A DataFrame with one row per transaction and a new total column"
+        why: "That's what `.transform('sum')` does: it broadcasts each group's total back to every row."
+      - id: d
+        text: "A list of the distinct countries"
+        why: "That would be `df['country'].unique()`."
+    answer: [b]
+    explanation: |
+      `groupby` follows *split-apply-combine*: split the rows by key, apply an aggregation to each
+      group, and combine the results. Selecting one column and aggregating it gives a **Series**
+      indexed by the group key; aggregating several columns (or using `.agg({...})`) gives a
+      DataFrame. The same pattern exists in SQL (`GROUP BY`), Polars (`group_by().agg()`) and Spark.
+
+  # ---------------------------------------------------------------- level 2
+  - id: ds-ml-eval-002
+    domain: ds
+    topic: ml-eval
+    tags: [precision, recall, metrics]
+    level: 2
+    kind: concept
+    type: single
+    prompt: |
+      You build a spam filter. Sending a legitimate email to the spam folder (a **false positive**)
+      is very costly for users, while letting some spam through is only a minor annoyance.
+      Which metric should you prioritize?
+    choices:
+      - id: a
+        text: "Recall on the spam class"
+        why: "Recall measures how much spam you catch. Maximizing it tends to flag more legitimate emails as well."
+      - id: b
+        text: "Precision on the spam class"
+        why: "Correct. Precision = TP / (TP + FP): high precision means that when you flag spam, it really is spam."
+      - id: c
+        text: "Accuracy"
+        why: "Accuracy mixes both kinds of error and doesn't tell you which mistake you're making."
+      - id: d
+        text: "The number of emails processed per second"
+        why: "Throughput matters operationally, but it says nothing about classification quality."
+    answer: [b]
+    explanation: |
+      **Precision** answers "of what I flagged, how much was right?" and penalizes false positives.
+      **Recall** answers "of what I should have flagged, how much did I catch?" and penalizes false
+      negatives. You usually trade one for the other by moving the decision threshold, so choose based
+      on the cost of each error (F1 balances the two; Fβ weights them). Medical screening, by contrast,
+      usually prioritizes recall.
+
+  - id: de-sql-003
+    domain: de
+    topic: sql
+    tags: [joins, left-join, nulls]
+    level: 2
+    kind: practical
+    type: single
+    prompt: |
+      You want **all customers**, with their paid orders when they have any:
+
+      ```sql
+      SELECT c.id, o.id AS order_id
+      FROM customers c
+      LEFT JOIN orders o ON o.customer_id = c.id
+      WHERE o.status = 'paid';
+      ```
+
+      Do customers **without any order** appear in the result?
+    choices:
+      - id: a
+        text: "Yes, with `order_id` set to NULL, thanks to the LEFT JOIN"
+        why: "The LEFT JOIN does produce those rows with NULLs, but then `o.status = 'paid'` evaluates to NULL (not true) for them, so `WHERE` filters them out."
+      - id: b
+        text: "No: the `WHERE` condition on `o.status` filters them out"
+        why: "Correct. Move the condition into the join (`ON o.customer_id = c.id AND o.status = 'paid'`) to keep unmatched customers with NULLs."
+      - id: c
+        text: "No: a LEFT JOIN never returns rows without a match"
+        why: "A LEFT JOIN keeps every row of the left table. It's the INNER JOIN that drops unmatched rows."
+      - id: d
+        text: "It depends on the order of the tables in the FROM clause"
+        why: "Table order decides which side is kept (left vs right), and here customers are on the left. The problem is the `WHERE` clause."
+    answer: [b]
+    explanation: |
+      A `WHERE` condition on a column of the *right* table of a LEFT JOIN discards the NULL-extended
+      rows, which silently turns the query into an INNER JOIN. Put conditions on the right table in
+      the `ON` clause. (`WHERE o.status = 'paid' OR o.id IS NULL` means something different: it keeps
+      customers with no orders at all, but still drops customers whose orders are all unpaid.)
+      Conditions on the *left* table belong in `WHERE` as usual.
+
+  - id: swe-testing-001
+    domain: swe
+    topic: testing
+    tags: [testability, dependency-injection, time]
+    level: 2
+    kind: practical
+    type: single
+    prompt: |
+      This function is hard to test reliably:
+
+      ```python
+      from datetime import datetime
+
+      def is_expired(coupon) -> bool:
+          return datetime.now() > coupon.expires_at
+      ```
+
+      What is the cleanest way to make it testable?
+    choices:
+      - id: a
+        text: "Run the tests at a fixed time of day, e.g. in a nightly CI job"
+        why: "The tests would still depend on the real date, and would break as soon as the fixture dates are in the past."
+      - id: b
+        text: "Add `time.sleep()` calls in the tests until the coupon expires"
+        why: "This is slow and flaky, and impossible for long expiry periods."
+      - id: c
+        text: "Mark the test as skipped: time-dependent code can't be unit tested"
+        why: "It can be tested once the time is an input. Skipping the test only hides bugs."
+      - id: d
+        text: "Pass the current time in as a parameter: `is_expired(coupon, now)`"
+        why: "Correct. Tests can then pass any date, deterministically. Injecting a clock object works the same way."
+    answer: [d]
+    explanation: |
+      Hidden dependencies on global state (current time, randomness, environment variables, network)
+      make tests non-deterministic. Make them **explicit inputs**: pass a value, inject a clock or
+      random generator, or add a default (`now: datetime | None = None`). Patching
+      (`unittest.mock.patch`, or libraries like `freezegun` and `time-machine`) also works, but
+      designing for testability usually gives simpler code.
+
+  - id: infra-scalability-001
+    domain: infra
+    topic: scalability
+    tags: [horizontal-scaling, stateless, load-balancing]
+    level: 2
+    kind: design
+    type: single
+    prompt: |
+      Traffic to your web API doubles, and you want to handle it by running **more instances**
+      behind a load balancer (horizontal scaling). Which property of the service makes this
+      straightforward?
+    choices:
+      - id: a
+        text: "It runs on the largest VM size available"
+        why: "That's vertical scaling, which has a ceiling and adds no redundancy."
+      - id: b
+        text: "It is stateless: session data lives in a shared store, not in memory"
+        why: "Correct. Any instance can then handle any request, so instances can be added or removed freely."
+      - id: c
+        text: "It writes its data to a SQLite file on the local disk of each instance"
+        why: "Each instance would have its own separate file, so the data would diverge between instances."
+      - id: d
+        text: "It keeps each user's session in an in-memory dictionary for speed"
+        why: "A user's next request may hit another instance that doesn't know the session (unless you use sticky sessions, which complicate scaling and failover)."
+    answer: [b]
+    explanation: |
+      A **stateless** service can be cloned freely: any instance can handle any request, so a load
+      balancer can spread traffic and an autoscaler can add or remove instances. State goes to
+      dedicated stores (databases, caches such as Redis, object storage, queues) that are scaled
+      separately. **Vertical scaling** (a bigger machine) is simpler, but it has a limit and keeps a
+      single point of failure.
+
+  - id: cs-operating-systems-001
+    domain: cs
+    topic: operating-systems
+    tags: [processes, threads, memory]
+    level: 2
+    kind: concept
+    type: single
+    prompt: |
+      Which statement about **processes** and **threads** is correct?
+    choices:
+      - id: a
+        text: "Processes share memory by default, which makes them lighter than threads"
+        why: "It's the reverse: each process has its own address space. That isolation makes processes heavier to create and harder to communicate between."
+      - id: b
+        text: "Each thread has its own separate heap, isolated from the other threads"
+        why: "Threads share the heap. Each thread only has its own stack and registers."
+      - id: c
+        text: "Threads of the same process share its memory (heap, global variables)"
+        why: "Correct. That's what makes threads cheap to communicate, and why shared data needs synchronization."
+      - id: d
+        text: "If one thread crashes with a segfault, the other threads of the process keep running"
+        why: "A segfault kills the whole process, including all of its threads."
+    answer: [c]
+    explanation: |
+      A **process** has its own address space, and the OS isolates processes from each other, so they
+      communicate through pipes, sockets, files or shared-memory segments. **Threads** live inside a
+      process and share its memory. They are cheap to create and to communicate with, but concurrent
+      access to shared data needs synchronization (locks, queues) to avoid race conditions. Each thread
+      has its own stack and instruction pointer.
+
+  - id: stack-python-001
+    domain: stack
+    topic: python
+    tags: [default-arguments, mutability, pitfalls]
+    level: 2
+    kind: internals
+    type: single
+    prompt: |
+      What does this print?
+
+      ```python
+      def add_item(item, items=[]):
+          items.append(item)
+          return items
+
+      add_item("a")
+      print(add_item("b"))
+      ```
+    choices:
+      - id: a
+        text: "`['b']`"
+        why: "That would be the result if the default list were created on each call. But default values are evaluated **once**, when the function is defined."
+      - id: b
+        text: "`['b', 'a']`"
+        why: "`append` adds at the end, and the list already contains `'a'`."
+      - id: c
+        text: "`['a', 'b']`"
+        why: "Correct. Both calls share the same default list object."
+      - id: d
+        text: "A `TypeError`, because a default argument can't be mutable"
+        why: "Python allows mutable defaults. It's a well-known pitfall, not an error (linters do warn about it)."
+    answer: [c]
+    explanation: |
+      Default argument values are evaluated a single time, when the function is defined, and stored on
+      the function object. A mutable default (list, dict, set) is therefore shared across calls. The
+      idiomatic fix:
+
+      ```python
+      def add_item(item, items=None):
+          if items is None:
+              items = []
+          items.append(item)
+          return items
+      ```
+
+      Linters such as Ruff flag mutable defaults (rule B006).
+
+  - id: de-data-modeling-001
+    domain: de
+    topic: data-modeling
+    tags: [star-schema, dimensional-modeling, kimball]
+    level: 2
+    kind: concept
+    type: multi
+    prompt: |
+      In a **star schema** (a Kimball-style dimensional model), which statements are true?
+      **Select all that apply.**
+    choices:
+      - id: a
+        text: "The fact table holds measures (e.g. sales amounts) and keys to the dimensions"
+        why: "Correct. Each fact row is one event at a declared grain (a sale line, a click…)."
+      - id: b
+        text: "Fact tables are usually small, while dimension tables hold most of the rows"
+        why: "It's usually the reverse: facts grow with every event (millions to billions of rows), while dimensions stay comparatively small."
+      - id: c
+        text: "Dimension tables hold descriptive attributes (customer name, product category…)"
+        why: "Correct. Dimensions answer who, what, where and when."
+      - id: d
+        text: "Everything is stored in one wide table, so queries never need joins"
+        why: "That's a 'one big table' design. A star schema joins a central fact table to its dimensions."
+      - id: e
+        text: "Dimension tables are usually denormalized, unlike in a snowflake schema"
+        why: "Correct. Denormalized dimensions keep joins simple and queries fast."
+    answer: [a, c, e]
+    explanation: |
+      A star schema puts a **fact table** at the center: one row per event at a declared grain, with
+      numeric measures and foreign keys. It is surrounded by **dimension tables** (who, what, where,
+      when), which are denormalized for simple, fast joins. A **snowflake schema** normalizes the
+      dimensions into sub-tables. Dimensional modeling is still the dominant approach for BI and
+      analytics engineering (e.g. dbt marts).
+
+  - id: ds-ml-validation-002
+    domain: ds
+    topic: ml-validation
+    tags: [time-series, train-test-split, leakage]
+    level: 2
+    kind: practical
+    type: single
+    prompt: |
+      You train a model to forecast **next month's sales** from 3 years of monthly history.
+      How should you split the data to evaluate it?
+    choices:
+      - id: a
+        text: "Shuffle all months randomly and keep 20% of them for testing"
+        why: "A random split lets the model train on the future and test on the past. That leaks information and gives over-optimistic scores."
+      - id: b
+        text: "Use the same data for training and testing, since time series are small"
+        why: "Scoring on the training data measures memorization, not forecasting ability."
+      - id: c
+        text: "Train on the earliest months and test on the most recent ones"
+        why: "Correct. This mimics production, where you always predict the future from the past."
+      - id: d
+        text: "Test on the oldest months, which are the least relevant for production"
+        why: "That trains on the future to predict the past: the opposite of the real use case."
+    answer: [c]
+    explanation: |
+      With time-dependent data, evaluation must respect time order: train on the past, validate on
+      the future. For more robust estimates, use **expanding-window (walk-forward) validation**, e.g.
+      scikit-learn's `TimeSeriesSplit`, and leave a gap between train and test if features use lagged
+      values. The same rule applies to any data with drift over time (churn, fraud, demand).
+
+  - id: swe-security-001
+    domain: swe
+    topic: security
+    tags: [secrets, api-keys, configuration]
+    level: 2
+    kind: practical
+    type: multi
+    prompt: |
+      Your app needs an API key for a third-party service. Which practices are appropriate?
+      **Select all that apply.**
+    choices:
+      - id: a
+        text: "Read it at runtime from an environment variable or a secrets manager"
+        why: "Correct. The key stays out of the code and can differ per environment."
+      - id: b
+        text: "Hard-code it in `config.py`, since the repository is private anyway"
+        why: "Private repositories get cloned, forked, shared and leaked, and anything in git history is effectively permanent."
+      - id: c
+        text: "Add the local `.env` file to `.gitignore` so it is never committed"
+        why: "Correct. Commit a `.env.example` with placeholder values instead."
+      - id: d
+        text: "Put it in the frontend JavaScript so the browser can call the service directly"
+        why: "Anything shipped to the browser is public: users can read it in the developer tools."
+      - id: e
+        text: "Revoke and rotate the key immediately if it is ever exposed"
+        why: "Correct. Deleting the commit isn't enough: assume an exposed secret has already been copied."
+    answer: [a, c, e]
+    explanation: |
+      Secrets belong outside the code: environment variables, a `.env` file kept out of git for local
+      development, and a secrets manager (AWS Secrets Manager, GCP Secret Manager, Vault…) in
+      production. Never expose them client-side; route the calls through your backend instead. Tools
+      like gitleaks or GitHub secret scanning catch accidental commits. Any leaked secret must be
+      rotated, because rewriting git history doesn't remove the copies.
+
+  - id: infra-iac-001
+    domain: infra
+    topic: iac
+    tags: [terraform, infrastructure-as-code]
+    level: 2
+    kind: concept
+    type: multi
+    prompt: |
+      Your team stops creating resources by clicking in the cloud console and switches to
+      **infrastructure as code** (Terraform, OpenTofu, Pulumi…). Which benefits does it bring?
+      **Select all that apply.**
+    choices:
+      - id: a
+        text: "Cloud credentials are no longer needed, since the tool deploys everything itself"
+        why: "The tool calls the same cloud APIs and needs credentials. IaC changes *how* you describe infrastructure, not who is allowed to change it."
+      - id: b
+        text: "Environments can be recreated reproducibly (e.g. staging identical to production)"
+        why: "Correct. The same code produces the same environment."
+      - id: c
+        text: "Infrastructure changes can be reviewed in pull requests, like application code"
+        why: "Correct. You also get history, and rollback by reverting a commit."
+      - id: d
+        text: "Deployments can no longer break production, because every change is declarative"
+        why: "A bad change applied through IaC breaks things just as well. IaC makes changes visible, reviewable and repeatable, not infallible."
+      - id: e
+        text: "`terraform plan` shows what will change before anything is applied"
+        why: "Correct. The same mechanism also reveals drift between the code and reality."
+    answer: [b, c, e]
+    explanation: |
+      IaC describes infrastructure in versioned files. You get **reproducibility** (same code → same
+      environment), **review and history** (pull requests, `git blame`, rollback by revert),
+      **previews** (`plan`) and **drift detection** (`plan` shows differences between the code and
+      reality). When several people apply changes, the Terraform/OpenTofu state file must be stored
+      remotely, with locking.

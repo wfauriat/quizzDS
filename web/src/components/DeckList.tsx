@@ -4,9 +4,10 @@ import { domainLabel } from "../labels";
 
 interface Props {
   onStart: (deck: DeckInfo, mode: Mode) => Promise<void>;
+  onReview: (sessionId: number) => Promise<void>;
 }
 
-export function DeckList({ onStart }: Props) {
+export function DeckList({ onStart, onReview }: Props) {
   const [decks, setDecks] = useState<DeckInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
@@ -14,6 +15,15 @@ export function DeckList({ onStart }: Props) {
   useEffect(() => {
     api.listDecks().then(setDecks, (e: Error) => setError(e.message));
   }, []);
+
+  async function review(sessionId: number) {
+    setError(null);
+    try {
+      await onReview(sessionId);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   async function start(deck: DeckInfo, mode: Mode) {
     setStarting(`${deck.id}:${mode}`);
@@ -26,13 +36,13 @@ export function DeckList({ onStart }: Props) {
     }
   }
 
-  if (error) return <p className="error">{error}</p>;
-  if (!decks) return <p className="muted">Loading decks…</p>;
+  if (!decks) return error ? <p className="error">{error}</p> : <p className="muted">Loading decks…</p>;
   if (decks.length === 0) return <p className="muted">No deck yet: add a YAML file in decks/ and restart the server.</p>;
 
   return (
     <div className="deck-list">
       <h1>Decks</h1>
+      {error && <p className="error">{error}</p>}
       {decks.map((deck) => (
         <article key={deck.id} className="card deck">
           <header className="deck-head">
@@ -54,7 +64,7 @@ export function DeckList({ onStart }: Props) {
               </span>
             ))}
           </div>
-          <LastScore deck={deck} />
+          <LastScore deck={deck} onReview={review} />
           <div className="deck-actions">
             <button
               type="button"
@@ -77,7 +87,7 @@ export function DeckList({ onStart }: Props) {
   );
 }
 
-function LastScore({ deck }: { deck: DeckInfo }) {
+function LastScore({ deck, onReview }: { deck: DeckInfo; onReview: (sessionId: number) => void }) {
   const last = deck.last_finished;
   if (!last) return <p className="deck-last muted">Not taken yet</p>;
   const pct = Math.round((100 * last.n_correct) / last.n_questions);
@@ -87,7 +97,10 @@ function LastScore({ deck }: { deck: DeckInfo }) {
       Last score: <strong>
         {last.n_correct}/{last.n_questions}
       </strong>{" "}
-      ({pct}%) · {last.mode} · {date}
+      ({pct}%) · {last.mode} · {date} ·{" "}
+      <button type="button" className="link" onClick={() => onReview(last.session_id)}>
+        Review
+      </button>
     </p>
   );
 }

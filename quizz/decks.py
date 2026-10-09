@@ -21,6 +21,17 @@ class DeckError(Exception):
         self.errors = errors
 
 
+def longest_choice_bias(deck: Deck) -> tuple[int, int]:
+    """Count single-answer questions whose correct choice is also the longest one.
+
+    Authors tend to make the right answer the most detailed, which gives it away; with ~4 choices,
+    chance is ~25%, so aim for roughly 10-40%. Returns (hits, number of single-answer questions).
+    """
+    singles = [q for q in deck.questions if q.type == "single"]
+    hits = sum(max(q.choices, key=lambda c: len(c.text)).id in q.answer for q in singles)
+    return hits, len(singles)
+
+
 def load_deck(path: Path) -> Deck:
     with path.open(encoding="utf-8") as f:
         return Deck.model_validate(yaml.safe_load(f))

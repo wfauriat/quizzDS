@@ -68,8 +68,12 @@ class ReviewItem(BaseModel):
     time_ms: int | None
 
 
-class Summary(SessionStats):
+class SessionInfo(SessionStats):
     deck_id: str
+    deck_title: str
+
+
+class Summary(SessionInfo):
     by_domain: list[Bucket]
     by_level: list[Bucket]
     items: list[ReviewItem]
@@ -83,12 +87,18 @@ class Graded:
 
 
 _STATS_SQL = """
-SELECT s.id AS session_id, s.mode, s.started_at, s.finished_at,
+SELECT s.id AS session_id, s.deck_id, d.title AS deck_title, s.mode, s.started_at, s.finished_at,
        (SELECT count(*) FROM session_question WHERE session_id = s.id) AS n_questions,
        (SELECT count(*) FROM attempt WHERE session_id = s.id) AS n_answered,
        (SELECT coalesce(sum(is_correct), 0) FROM attempt WHERE session_id = s.id) AS n_correct
 FROM quiz_session s
+JOIN deck d ON d.id = s.deck_id
 """
+
+
+def list_sessions(conn: sqlite3.Connection) -> list[SessionInfo]:
+    """All sessions, newest first."""
+    return [SessionInfo(**row) for row in conn.execute(_STATS_SQL + "ORDER BY s.id DESC")]
 
 
 def list_decks(conn: sqlite3.Connection) -> list[DeckInfo]:
@@ -232,7 +242,6 @@ def summarize(conn: sqlite3.Connection, session_id: int) -> Summary:
         )
     return Summary(
         **stats,
-        deck_id=session["deck_id"],
         by_domain=_buckets(by_domain),
         by_level=_buckets(by_level),
         items=items,

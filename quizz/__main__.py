@@ -12,9 +12,11 @@ from typing import Annotated, Optional
 import typer
 
 from quizz.db import DB_PATH, connect, import_decks
-from quizz.decks import DECKS_DIR, DeckError, load_decks
+from quizz.decks import DECKS_DIR, DeckError, load_decks, longest_choice_bias
 from quizz.models import Deck, deck_json_schema
-from quizz.render import RENDER_DIR, render_deck
+from quizz import service
+from quizz.render import RENDER_DIR, render_deck, render_session
+from quizz.report import build_report
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -44,6 +46,13 @@ def validate(
         for axis in ("domain", "level", "kind", "type"):
             counts = Counter(getattr(q, axis) for q in qs)
             typer.echo(f"    {axis:<7} " + "  ".join(f"{k}:{n}" for k, n in sorted(counts.items())))
+        hits, singles = longest_choice_bias(deck)
+        biased = singles >= 8 and not 0.1 <= hits / singles <= 0.4
+        typer.secho(
+            f"    lint    correct choice is the longest in {hits}/{singles} single-answer questions"
+            + ("  ⚠ gives answers away: aim for 10-40%" if biased else ""),
+            fg="yellow" if biased else None,
+        )
 
 
 @app.command()
@@ -88,6 +97,68 @@ def import_(
         counts = import_decks(conn, decks)
     summary = ", ".join(f"{counts[k]} {k}" for k in ("new", "changed", "unchanged"))
     typer.echo(f"imported {len(decks)} deck(s) into {db_path}: {summary} questions")
+
+
+@app.command()
+def report(
+    deck: Annotated[Optional[str], typer.Option(help="Only answers from sessions on this deck.")] = None,
+    since: Annotated[Optional[str], typer.Option(help="Only answers on or after this date (YYYY-MM-DD).")] = None,
+    session: Annotated[Optional[list[int]], typer.Option(help="Only these session ids (repeatable).")] = None,
+    out: Annotated[Optional[Path], typer.Option(help="Write to this file instead of stdout.")] = None,
+    db_path: Annotated[Path, typer.Option(help="SQLite database file.")] = DB_PATH,
+) -> None:
+    """Markdown report of the answer history: accuracy, calibration, misses, coverage."""
+    with closing(connect(db_path)) as conn:
+        text = build_report(conn, deck=deck, since=since, session_ids=session)
+    if out:
+        out.write_text(text, encoding="utf-8")
+        typer.echo(f"wrote {out}")
+    else:
+        typer.echo(text)
+
+
+@app.command()
+def sessions(
+    db_path: Annotated[Path, typer.Option(help="SQLite database file.")] = DB_PATH,
+) -> None:
+    """List past sessions, newest first (ids for `review` and `report --session`)."""
+    with closing(connect(db_path)) as conn:
+        rows = service.list_sessions(conn)
+    if not rows:
+        typer.echo("no session yet")
+    for s in rows:
+        status = "" if s.finished_at else "  (unfinished)"
+        typer.echo(
+            f"{s.session_id:>4}  {s.started_at[:16].replace('T', ' ')} UTC  {s.mode:<5}  "
+            f"{s.n_correct:>2}/{s.n_questions:<2} correct  {s.deck_id}{status}"
+        )
+
+
+@app.command()
+def review(
+    session_id: Annotated[Optional[int], typer.Argument(help="Session id (default: the latest finished one).")] = None,
+    out: Annotated[Optional[Path], typer.Option(help="Output file (default: data/render/session-<id>.html).")] = None,
+    open_browser: Annotated[bool, typer.Option("--open", help="Open the page in a browser.")] = False,
+    db_path: Annotated[Path, typer.Option(help="SQLite database file.")] = DB_PATH,
+) -> None:
+    """Render a past session's results as an HTML page, like the UI summary screen."""
+    with closing(connect(db_path)) as conn:
+        if session_id is None:
+            session_id = conn.execute("SELECT max(id) FROM quiz_session WHERE finished_at IS NOT NULL").fetchone()[0]
+            if session_id is None:
+                typer.secho("no finished session yet", fg="red", err=True)
+                raise typer.Exit(1)
+        try:
+            summary = service.summarize(conn, session_id)
+        except (service.NotFound, service.Conflict) as e:
+            typer.secho(str(e), fg="red", err=True)
+            raise typer.Exit(1)
+    out = out or RENDER_DIR / f"session-{session_id}.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(render_session(summary), encoding="utf-8")
+    typer.echo(f"wrote {out}")
+    if open_browser:
+        webbrowser.open(out.resolve().as_uri())
 
 
 @app.command()

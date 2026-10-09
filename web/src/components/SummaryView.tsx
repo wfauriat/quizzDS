@@ -6,23 +6,24 @@ import { QuestionMeta } from "./QuestionMeta";
 
 interface Props {
   summary: Summary;
-  deckTitle: string;
+  backLabel: string;
   onBack: () => void;
 }
 
-export function SummaryView({ summary, deckTitle, onBack }: Props) {
+export function SummaryView({ summary, backLabel, onBack }: Props) {
   const pct = Math.round((100 * summary.n_correct) / summary.n_questions);
   const answered = summary.items.filter((i) => i.is_correct !== null);
   const sureWrong = answered.filter((i) => i.confidence === 3 && !i.is_correct).length;
   const guessedRight = answered.filter((i) => i.confidence === 1 && i.is_correct).length;
   const duration =
     summary.finished_at && Date.parse(summary.finished_at) - Date.parse(summary.started_at);
+  const when = new Date(summary.started_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
   return (
     <div className="summary">
       <p className="muted">
-        {deckTitle} · <span className={`mode mode-${summary.mode}`}>{summary.mode}</span>
-        {duration ? ` · ${formatDuration(duration)}` : ""}
+        {summary.deck_title} · <span className={`mode mode-${summary.mode}`}>{summary.mode}</span> · {when}
+        {duration ? ` · ${formatDuration(duration)}` : " · unfinished"}
       </p>
 
       <section className="card score">
@@ -58,7 +59,7 @@ export function SummaryView({ summary, deckTitle, onBack }: Props) {
       </div>
 
       <button type="button" className="btn btn-primary" onClick={onBack}>
-        ← Back to decks
+        ← {backLabel}
       </button>
     </div>
   );

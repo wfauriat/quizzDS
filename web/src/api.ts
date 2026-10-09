@@ -15,6 +15,11 @@ export interface SessionStats {
   n_correct: number;
 }
 
+export interface SessionInfo extends SessionStats {
+  deck_id: string;
+  deck_title: string;
+}
+
 export interface DeckInfo {
   id: string;
   title: string;
@@ -87,8 +92,7 @@ export interface ReviewItem {
   time_ms: number | null;
 }
 
-export interface Summary extends SessionStats {
-  deck_id: string;
+export interface Summary extends SessionInfo {
   by_domain: Bucket[];
   by_level: Bucket[];
   items: ReviewItem[];
@@ -117,4 +121,6 @@ export const api = {
   createSession: (deck_id: string, mode: Mode) => request<SessionOut>("POST", "/sessions", { deck_id, mode }),
   answer: (sessionId: number, body: AnswerIn) => request<Feedback>("POST", `/sessions/${sessionId}/answers`, body),
   finish: (sessionId: number) => request<Summary>("POST", `/sessions/${sessionId}/finish`),
+  listSessions: () => request<SessionInfo[]>("GET", "/sessions"),
+  summary: (sessionId: number) => request<Summary>("GET", `/sessions/${sessionId}/summary`),
 };

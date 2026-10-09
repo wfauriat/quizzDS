@@ -3,13 +3,29 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from quizz.decks import DECKS_DIR, DeckError, load_decks
+from quizz.decks import DECKS_DIR, DeckError, load_decks, longest_choice_bias
 from quizz.models import Deck, Question, deck_json_schema
 from tests.helpers import make_question, write_deck
 
 
 def test_repo_decks_are_valid():
     assert load_decks(), "expected at least one deck in decks/"
+
+
+def test_longest_choice_bias():
+    long_right = make_question(choices=[{"id": "a", "text": "the long correct one"}, {"id": "b", "text": "no"}])
+    short_right = make_question(choices=[{"id": "a", "text": "yes"}, {"id": "b", "text": "a longer distractor"}])
+    multi = make_question(type="multi", answer=["a", "b"])  # multi-select questions are not counted
+    deck = Deck.model_validate(
+        {"id": "d", "title": "d", "questions": [long_right, short_right | {"id": "q-2"}, multi | {"id": "q-3"}]}
+    )
+    assert longest_choice_bias(deck) == (1, 2)
+
+
+def test_repo_decks_do_not_give_answers_away():
+    for path, deck in load_decks():
+        hits, singles = longest_choice_bias(deck)
+        assert 0.1 <= hits / singles <= 0.4, f"{path.name}: correct choice is the longest in {hits}/{singles}"
 
 
 def test_schema_file_is_up_to_date():

@@ -84,6 +84,7 @@ def test_exam_mode_reveals_nothing_until_finished(client):
 
     summary = client.post(f"/api/sessions/{sid}/finish").json()
     assert summary["finished_at"] is not None
+    assert (summary["deck_id"], summary["deck_title"]) == ("test-deck", "test-deck")
     assert (summary["n_questions"], summary["n_answered"], summary["n_correct"]) == (2, 1, 0)
     first = summary["items"][0]
     assert first["selected"] == ["b"] and first["is_correct"] is False
@@ -114,6 +115,32 @@ def test_summary_breakdowns_and_analysis_view(client):
     [deck] = client.get("/api/decks").json()
     assert deck["last_finished"]["session_id"] == sid
     assert deck["last_finished"]["n_correct"] == 1
+
+
+def test_past_sessions_can_be_listed_and_reviewed(client):
+    assert client.get("/api/sessions").json() == []
+    first = start(client, mode="exam")["session_id"]
+    answer(client, first, "cs-test-001", ["a"])
+    client.post(f"/api/sessions/{first}/finish")
+    second = start(client)["session_id"]  # left unfinished
+
+    sessions = client.get("/api/sessions").json()
+    assert [s["session_id"] for s in sessions] == [second, first]  # newest first
+    assert sessions[1] | {"started_at": None, "finished_at": None} == {
+        "session_id": first,
+        "deck_id": "test-deck",
+        "deck_title": "test-deck",
+        "mode": "exam",
+        "started_at": None,
+        "finished_at": None,
+        "n_questions": 2,
+        "n_answered": 1,
+        "n_correct": 1,
+    }
+    assert sessions[0]["finished_at"] is None
+
+    review = client.get(f"/api/sessions/{first}/summary").json()
+    assert review["items"][0]["selected"] == ["a"] and review["items"][0]["question"]["answer"] == ["a"]
 
 
 @pytest.mark.parametrize(

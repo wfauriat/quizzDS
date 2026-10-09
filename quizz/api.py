@@ -20,7 +20,7 @@ from quizz import service
 from quizz.db import DB_PATH, connect, import_decks
 from quizz.decks import DECKS_DIR, ROOT, load_decks
 from quizz.models import Domain, Kind, QuestionType
-from quizz.service import DeckInfo, Mode, Summary
+from quizz.service import DeckInfo, Mode, SessionInfo, Summary
 
 WEB_DIST = ROOT / "web" / "dist"
 
@@ -85,6 +85,12 @@ router = APIRouter(prefix="/api")
 @router.get("/decks")
 def list_decks(db: Db) -> list[DeckInfo]:
     return service.list_decks(db)
+
+
+@router.get("/sessions")
+def list_sessions(db: Db) -> list[SessionInfo]:
+    """Past sessions, newest first; review one with GET /api/sessions/{id}/summary."""
+    return service.list_sessions(db)
 
 
 @router.post("/sessions", status_code=201)

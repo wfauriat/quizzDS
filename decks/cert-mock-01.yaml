@@ -1,0 +1,2143 @@
+# yaml-language-server: $schema=./deck.schema.json
+id: cert-mock-01
+title: "Certification mock #1: data & ML engineering (L3–L4)"
+description: >-
+  A 60-question mock certification exam for a data engineer / data scientist profile, vendor-neutral,
+  at levels 3–4: ingestion and streaming, storage and modeling, SQL, data operations, ML development
+  and production (with a little generative AI), security, cost and reliability, plus some software
+  engineering. Take it in exam mode, in one sitting of about 75 minutes.
+author: "claude-opus-5-5 2026-10-09"
+questions:
+  - id: de-cdc-001
+    domain: de
+    topic: cdc
+    tags: [replication, postgresql, freshness]
+    level: 3
+    kind: design
+    type: single
+    prompt: |
+      An `orders` table in a production PostgreSQL database (about 2,000 writes per second at peak)
+      must be replicated to the lakehouse with **under 5 minutes of lag**. Rows are updated in place and
+      sometimes **hard-deleted**, and analysts need deletes reflected too. The DBA insists on **minimal
+      extra load** on the primary.
+
+      Which approach meets these requirements best?
+    choices:
+      - id: a
+        text: "Every 5 minutes, query `SELECT * FROM orders WHERE updated_at > :last_run` and merge the result into the lake table"
+        why: "Polling on `updated_at` never sees hard deletes (deleted rows simply stop appearing), relies on every writer maintaining `updated_at`, and repeatedly queries the primary."
+      - id: b
+        text: "Read the database's write-ahead log with a tool such as Debezium, publish the changes to a stream, and apply them to the lake table with a periodic MERGE"
+        why: "Log-based CDC reads changes the database already writes to its log: inserts, updates and deletes, in commit order, with little overhead on the primary and seconds of lag."
+      - id: c
+        text: "Add row-level triggers on `orders` that write every insert, update and delete into an `orders_audit` table inside the same transaction, then export the new audit rows every few minutes"
+        why: "Triggers do capture deletes, but they add a synchronous extra write to every transaction on a busy primary: exactly the load the DBA wants to avoid."
+      - id: d
+        text: "Run a full export of the table every 5 minutes and overwrite the lake copy with the latest snapshot"
+        why: "A full export reflects deletes, but rereading the whole table every 5 minutes puts heavy load on the primary and gets slower as the table grows."
+    answer: [b]
+    explanation: |
+      **Log-based change data capture** (CDC) tails the database's transaction log (PostgreSQL's WAL
+      through logical decoding, MySQL's binlog...). It sees every committed insert, update and delete,
+      in order, without querying the tables, so the overhead on the primary is small and the lag is
+      seconds. Query-based polling misses hard deletes, and triggers or full exports add load to the
+      primary. Debezium with Kafka, or the managed CDC services of cloud providers, are the usual
+      implementations.
+
+  - id: ds-experimentation-001
+    domain: ds
+    topic: experimentation
+    tags: [ab-testing, assignment, data-quality]
+    level: 4
+    kind: practical
+    type: single
+    prompt: |
+      An A/B test was designed with a **50/50 split**. After two weeks, the control group has
+      **50,900 users** and the treatment group **49,100**. Treatment shows +3% revenue per user, with
+      p = 0.02.
+
+      What should you do first?
+    choices:
+      - id: a
+        text: "Ship the treatment: the revenue effect is significant at the 5% level"
+        why: "The result can't be trusted while the assignment itself looks broken."
+      - id: b
+        text: "Rebalance the groups by randomly dropping 1,800 control users, then recompute the test"
+        why: "Dropping users at random doesn't remove whatever selection created the imbalance; it only hides the symptom."
+      - id: c
+        text: "Treat it as a sample ratio mismatch (chi-square p ≈ 10⁻⁸) and find the assignment or logging bug before trusting any metric"
+        why: "Under a fair 50/50 split, a group's size has a standard deviation of about 158 users here; 900 users off is about 5.7 standard deviations, which practically never happens by chance."
+      - id: d
+        text: "Ignore the imbalance: a gap of 1.8 points between the groups is normal random variation in a test with as many as 100,000 users"
+        why: "With 100,000 users the expected random gap is small (a standard deviation of about 158 users per group); 900 users off is far outside it."
+    answer: [c]
+    explanation: |
+      A **sample ratio mismatch** (SRM) means the observed split is incompatible with the designed one.
+      Here z = (50,900 − 50,000) / √(100,000 × 0.25) ≈ 5.7, so p ≈ 10⁻⁸. SRM signals a problem such as a
+      redirect that loses some treatment users, bot filtering that affects the groups differently, or
+      logging that depends on the variant. Since the missing users are rarely random, every metric of
+      the test is suspect until the cause is found. Experimentation platforms run an SRM check
+      automatically.
+
+  - id: infra-security-001
+    domain: infra
+    topic: security
+    tags: [iam, service-identity, credentials]
+    level: 3
+    kind: design
+    type: single
+    prompt: |
+      A nightly pipeline running on a managed container service reads from the bucket `raw-events` and
+      writes to the bucket `curated-events`. Today it uses the access key of an engineer's personal
+      account, which has admin rights, stored in an environment variable.
+
+      Which setup follows least privilege with the LEAST credential management?
+    choices:
+      - id: a
+        text: "A dedicated service identity for the pipeline, allowed to read `raw-events` and write `curated-events` only, with short-lived credentials provided by the platform at runtime"
+        why: "A dedicated identity scoped to the two buckets limits the blast radius, and platform-issued short-lived credentials leave no long-lived secret to store or rotate."
+      - id: b
+        text: "Keep the engineer's account, but move its access key to a secrets manager and rotate it every 90 days"
+        why: "Better storage, but the pipeline still runs with a person's admin rights and breaks when that person leaves; rotation doesn't fix over-privilege."
+      - id: c
+        text: "Create a service account with the predefined storage admin role on the project, and store its key file in the container image"
+        why: "Storage admin covers every bucket, including deleting them, and a key baked into an image leaks to anyone who can pull the image."
+      - id: d
+        text: "Make `raw-events` readable by all authenticated identities of the cloud account, and keep a key only for writing to `curated-events`"
+        why: "Opening a bucket to every identity in the account is far broader than needed, and a long-lived key remains."
+    answer: [a]
+    explanation: |
+      Least privilege means one identity per workload, with only the actions and resources it needs:
+      here, read on one bucket and write on another. Cloud platforms can attach such an identity to the
+      compute itself (IAM roles for instances or tasks, workload identity on Kubernetes, managed
+      identities), so the code gets short-lived credentials automatically and there is no key to leak,
+      store or rotate. Personal accounts and long-lived keys in images or environment variables are
+      classic causes of breaches.
+
+  - id: stack-spark-001
+    domain: stack
+    topic: spark
+    tags: [joins, performance, partitions]
+    level: 4
+    kind: practical
+    type: single
+    prompt: |
+      A Spark job joins `clicks` (3 billion rows) with `users` (200 million rows) on `user_id`. One of
+      the 2,000 tasks of the join stage runs for 2 hours, while the others finish in 2 minutes. A
+      quarter of all clicks come from a single bot account.
+
+      What addresses the slow task?
+    choices:
+      - id: a
+        text: "Add more executors and raise `spark.sql.shuffle.partitions`, so that the join stage gets more parallelism"
+        why: "More partitions and executors help when the work is evenly spread; here all the rows of the hot key still go to a single task."
+      - id: b
+        text: "Repartition `clicks` by `user_id` into 4,000 partitions before the join"
+        why: "Partitioning by the same key still sends every row of the hot user to one partition."
+      - id: c
+        text: "Spread the hot key over many tasks: adaptive skew-join handling, or salting that key"
+        why: "Skew-join handling (adaptive query execution, Spark 3+) splits oversized partitions and replicates the matching rows; salting does the same manually. Filtering out the bot traffic, if it isn't needed, is even simpler."
+      - id: d
+        text: "Cache `users` in memory before the join"
+        why: "Caching the smaller side speeds up reading it, but the skewed task still processes a quarter of all clicks on its own."
+    answer: [c]
+    explanation: |
+      **Data skew**: a hash-partitioned join or aggregation sends all the rows of a key to the same task,
+      so one hot key makes one straggler task. Fixes: Spark's adaptive query execution
+      (`spark.sql.adaptive.skewJoin.enabled`, on by default in recent versions) splits skewed
+      partitions; manual **salting** adds a random suffix to the hot key on the large side and
+      replicates the matching rows on the other side; broadcasting the small side avoids the shuffle
+      when it fits in memory (200 million users usually doesn't); and filtering junk keys removes the
+      problem at the source.
+
+  - id: mlops-serving-001
+    domain: mlops
+    topic: serving
+    tags: [inference, latency, architecture]
+    level: 3
+    kind: design
+    type: single
+    prompt: |
+      Two models need to go to production:
+
+      - **A**: product recommendations for 5 million users, included in a marketing email sent every
+        morning at 7:00.
+      - **B**: a cart-abandonment score computed while the user is on the checkout page, using what is
+        currently in the cart and the clicks of the last few minutes.
+
+      Which serving design fits?
+    choices:
+      - id: a
+        text: "Both as online endpoints behind one autoscaling model server, so that a single serving stack, monitoring setup and deployment process covers both"
+        why: "Possible for A, but 5 million calls every morning to an endpoint is costlier and more fragile than one batch job, for no freshness benefit."
+      - id: b
+        text: "Both as nightly batch jobs writing scores to a table, which the email system and the checkout page read"
+        why: "A nightly score can't know what is in the cart right now, so B would use stale inputs."
+      - id: c
+        text: "A as a scheduled batch scoring job writing to a table; B as an online endpoint that gets fresh session features at request time"
+        why: "A's inputs and consumer are daily, so batch is simplest and cheapest; B depends on the current session, so it must be scored at request time with low-latency features."
+      - id: d
+        text: "A as an online endpoint called when each email is opened; B as a batch job running every hour"
+        why: "This is backwards: email content is usually rendered when the email is sent, and an hourly score misses the current cart."
+    answer: [c]
+    explanation: |
+      Choose the serving mode from **when the prediction is needed and how fresh its inputs must be**.
+      Batch (offline) inference precomputes scores on a schedule and stores them: cheap, simple, easy to
+      retry, fine when inputs change slowly and the consumer reads on a schedule. Online inference
+      computes a prediction per request: needed when the inputs only exist at request time (session,
+      cart, current context), at the cost of a latency budget, autoscaling and an online feature path.
+
+  - id: de-sql-007
+    domain: de
+    topic: sql
+    tags: [window-functions, consecutive-days]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      `logins(user_id, login_date)` has at most one row per user and day. You want each user's
+      **streaks of consecutive login days** (start, end, length).
+
+      Which expression, computed in a subquery and then used as a grouping key together with
+      `user_id`, puts each streak in its own group? (PostgreSQL syntax: `date - integer` gives a date.)
+    choices:
+      - id: a
+        text: "`login_date - ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date)::int`"
+        why: "Within a streak, the date and the row number both increase by 1 per row, so their difference is constant; any gap changes it. Grouping by it gives one group per streak."
+      - id: b
+        text: "`login_date - LAG(login_date) OVER (PARTITION BY user_id ORDER BY login_date)`, the number of days since the previous login"
+        why: "This is 1 inside a streak and larger after a gap: it marks where streaks break, but all the days of all the streaks share the value 1, so grouping by it merges the streaks."
+      - id: c
+        text: "`DENSE_RANK() OVER (PARTITION BY user_id ORDER BY login_date)`"
+        why: "With one row per day, this is just a row number: every day gets its own value, so each group is a single day."
+      - id: d
+        text: "`EXTRACT(WEEK FROM login_date)`"
+        why: "Calendar weeks split streaks that cross a week boundary and merge separate streaks within the same week."
+    answer: [a]
+    explanation: |
+      This is the classic **gaps-and-islands** technique. Number each user's rows in date order: inside
+      a run of consecutive dates, the date and the row number increase in lockstep, so
+      `date − row_number` is the same for the whole run and changes after any gap. Then
+      `GROUP BY user_id, grp` with `MIN(login_date)`, `MAX(login_date)` and `COUNT(*)` gives the streaks.
+      The `LAG` approach also works, but needs a second step: flag the rows where the gap is greater than
+      1, then take a running sum of the flags to number the streaks.
+
+  - id: ds-ml-eval-005
+    domain: ds
+    topic: ml-eval
+    tags: [pr-auc, imbalanced-data, model-comparison]
+    level: 4
+    kind: concept
+    type: single
+    prompt: |
+      Two fraud models were evaluated on **different** datasets. Model A has a PR-AUC (average
+      precision) of **0.30** on a dataset with **1%** fraud; model B has **0.45** on a dataset with
+      **10%** fraud.
+
+      What can you conclude?
+    choices:
+      - id: a
+        text: "B is better, since its PR-AUC is 50% higher than A's"
+        why: "PR-AUC depends on the share of positives, so values from datasets with different prevalence aren't comparable."
+      - id: b
+        text: "A is better: relative to its random baseline (the fraud rate), it improves 30-fold, against 4.5-fold for B"
+        why: "Ratios to the baseline aren't comparable across prevalences either: the whole precision-recall curve changes shape with the positive rate."
+      - id: c
+        text: "Nothing reliable: PR-AUC depends on the fraud rate, so compare both models on the same test set"
+        why: "A random classifier's PR-AUC equals the prevalence (0.01 vs 0.10), and the whole curve shifts with it. Only an evaluation on the same data tells which model ranks fraud better."
+      - id: d
+        text: "They are equivalent once converted to ROC-AUC with the formula ROC-AUC = PR-AUC / prevalence"
+        why: "There is no such conversion: ROC-AUC can't be derived from PR-AUC and the prevalence alone."
+    answer: [c]
+    explanation: |
+      Precision depends on the positive rate: with fewer positives, the same model has lower precision
+      at every recall. PR-AUC (or average precision) is therefore **not comparable across datasets with
+      different prevalence**, and its random baseline is the prevalence itself. ROC-AUC is insensitive
+      to prevalence, but with very rare positives it can hide poor precision. Compare models on the same
+      test set, with the metric that matches the operating constraint (for example precision at the
+      review capacity).
+
+  - id: swe-resilience-001
+    domain: swe
+    topic: resilience
+    tags: [retries, outages, clients]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      2,000 worker processes call an internal API. Each one retries a failed call **every second until
+      it succeeds**. After a 10-minute outage, the API comes back, immediately falls over again under
+      the burst, and the cycle repeats several times.
+
+      What change to the clients addresses this?
+    choices:
+      - id: a
+        text: "Exponential backoff with random jitter, capped, and a limit on retries (or a circuit breaker)"
+        why: "Backoff lowers the retry rate as the outage lasts, jitter spreads the clients over time so they don't hit the service in synchronized waves, and a retry limit or circuit breaker stops hopeless retries."
+      - id: b
+        text: "Shorten the retry interval to 100 ms so that the backlog clears faster once the API is back"
+        why: "Faster retries multiply the load on a recovering service: the stampede gets worse."
+      - id: c
+        text: "Use exponential backoff without jitter, so that every client follows the same, predictable and easily debuggable retry schedule"
+        why: "Backoff alone reduces the rate, but clients that failed together retry together: the synchronized waves remain."
+      - id: d
+        text: "Raise the client timeout from 2 s to 60 s, so that requests wait for the API to come back instead of failing and retrying"
+        why: "Long timeouts tie up workers and connections during an outage, and don't spread the retries out."
+    answer: [a]
+    explanation: |
+      Fixed-interval retries from many clients create a **thundering herd** (a retry storm) that can keep
+      a recovering service down. Standard client behaviour: exponential backoff with a cap, random
+      jitter (e.g. "full jitter": sleep a random time between 0 and the current backoff), a maximum
+      number of attempts or a retry budget, and a circuit breaker that fails fast while the dependency
+      is down. Only retry operations that are safe to repeat (idempotent ones).
+
+  - id: infra-security-002
+    domain: infra
+    topic: security
+    tags: [kms, encryption, key-rotation]
+    level: 4
+    kind: internals
+    type: single
+    prompt: |
+      Your object storage encrypts data with a customer-managed key held in the cloud **key management
+      service** (envelope encryption). Security enables **automatic yearly rotation** of that key.
+
+      What happens to the petabytes of objects written before the rotation?
+    choices:
+      - id: a
+        text: "They are gradually re-encrypted in the background with the new key version, which can take days for petabytes of objects"
+        why: "Rotation doesn't touch existing data: re-encrypting petabytes at each rotation is exactly what envelope encryption avoids."
+      - id: b
+        text: "They become unreadable until they are re-uploaded, so each yearly rotation must be planned together with a migration of the existing data"
+        why: "Old key versions are kept for decryption: nothing becomes unreadable."
+      - id: c
+        text: "Nothing: their data keys stay wrapped by the old key version, which the KMS keeps for decryption; new writes use the new version"
+        why: "Each object is encrypted with its own data key, and only that small key is wrapped by the KMS key. Rotation creates a new version for future wraps, and old versions remain available to unwrap existing data keys."
+      - id: d
+        text: "They are decrypted and stored in plain text until the new key version is ready"
+        why: "Rotation never decrypts stored data."
+    answer: [c]
+    explanation: |
+      **Envelope encryption**: data is encrypted locally with a data encryption key (DEK); the DEK is
+      encrypted by a key encryption key (KEK) that never leaves the KMS, and the wrapped DEK is stored
+      next to the data. Rotating the KEK creates a new version for future wraps and keeps the old
+      versions for decryption, so it is cheap and needs no data rewrite: it limits how much new data one
+      key version protects. Disabling or destroying a key version, on the other hand, makes the data it
+      protects unreadable, which is the basis of crypto-shredding.
+
+  - id: de-table-formats-002
+    domain: de
+    topic: table-formats
+    tags: [iceberg, delta-lake, lakehouse]
+    level: 3
+    kind: concept
+    type: multi
+    prompt: |
+      Your team moves from plain Parquet folders to an open table format such as **Apache Iceberg** or
+      **Delta Lake**. Which statements are true? **Select all that apply.**
+    choices:
+      - id: a
+        text: "You can query the table as it was at an earlier snapshot (time travel), as long as that snapshot hasn't been expired"
+        why: "Each commit creates a snapshot; readers can target an older one until maintenance removes it."
+      - id: b
+        text: "Adding a nullable column is a metadata-only change: existing data files are not rewritten"
+        why: "Schema evolution is tracked in the table metadata; old files simply return null for the new column."
+      - id: c
+        text: "Row-level `DELETE`, `UPDATE` and `MERGE` become possible, with atomic commits that readers never see half-applied"
+        why: "The formats rewrite (or mark as deleted) the affected rows and publish the change in one atomic commit."
+      - id: d
+        text: "Files replaced by a commit are deleted immediately, so the storage never needs periodic maintenance"
+        why: "Old files stay for time travel and for concurrent readers: you must expire snapshots and remove unreferenced files (e.g. `expire_snapshots`, `VACUUM`), or storage keeps growing."
+      - id: e
+        text: "The table can only be read and written by the engine that created it"
+        why: "These are open formats: Spark, Trino, Flink, DuckDB, Snowflake, BigQuery and others can read them, and several can write them."
+    answer: [a, b, c]
+    explanation: |
+      Open table formats add a metadata layer (snapshots, manifests or a transaction log) on top of
+      Parquet files in object storage. That layer brings ACID commits, row-level changes, schema and
+      partition evolution, and time travel, and it is engine-neutral. The price is maintenance:
+      compacting small files and expiring old snapshots, without which storage and query planning time
+      keep growing.
+
+  - id: ds-ml-eval-004
+    domain: ds
+    topic: ml-eval
+    tags: [thresholds, cost-sensitive, fraud]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      A fraud model outputs **well-calibrated** probabilities. Sending a transaction to manual review
+      costs **€5**; letting a fraudulent transaction through costs **€500** on average.
+
+      Above which predicted probability should a transaction go to review, to minimize the expected
+      cost?
+    choices:
+      - id: a
+        text: "0.5, the point at which fraud becomes more likely than not"
+        why: "0.5 minimizes the number of errors only when both kinds of error cost the same; here a miss costs 100 times more than a review."
+      - id: b
+        text: "About 0.01: a review costs €5 for sure, while not reviewing costs p × €500 on average"
+        why: "Reviewing is cheaper in expectation as soon as 500 × p > 5, that is p > 0.01."
+      - id: c
+        text: "The threshold that maximizes accuracy on a validation set"
+        why: "Accuracy weighs both errors equally, so it ignores the 100-to-1 cost ratio; with rare fraud it pushes the threshold up."
+      - id: d
+        text: "0.99, so that analysts only spend their time on transactions that are almost certainly fraudulent"
+        why: "This minimizes reviews but lets through every transaction with p between 0.01 and 0.99, each costing p × €500 in expectation: more than the €5 review, and up to €495."
+    answer: [b]
+    explanation: |
+      With calibrated probabilities, the cost-minimizing decision compares expected costs: reviewing
+      costs €5, not reviewing costs p × €500. Review whenever p > 5 / 500 = 0.01. In general the
+      threshold follows from the costs of each outcome, not from accuracy, and it is often far from 0.5.
+      This only works if the probabilities are calibrated: check with a reliability curve, and
+      recalibrate (isotonic regression or Platt scaling) if needed.
+
+  - id: mlops-features-001
+    domain: mlops
+    topic: features
+    tags: [production, online-offline, recommendations]
+    level: 4
+    kind: design
+    type: single
+    prompt: |
+      A recommendation model was trained with `purchases_30d` computed in the warehouse by a nightly SQL
+      job (calendar days, UTC). In production, the backend computes the same feature in Java from the
+      purchases of the last 30 × 24 hours, in the user's time zone. Offline AUC was 0.82; online
+      performance is clearly worse.
+
+      What is the most robust fix?
+    choices:
+      - id: a
+        text: "Retrain the model more often so that it adapts to the values seen in production"
+        why: "Retraining on warehouse features doesn't change their mismatch with the values computed in production."
+      - id: b
+        text: "Compute each feature once, in a single pipeline that feeds both the training data and the online serving path"
+        why: "One definition and one computation remove the training-serving skew at its source: the online store serves the same values the training data was built from."
+      - id: c
+        text: "Ask the backend team to reimplement the warehouse SQL logic in Java exactly, and add tests comparing the outputs of both implementations"
+        why: "It can work for a while, but two implementations of every feature tend to drift apart again as both evolve."
+      - id: d
+        text: "Add input drift monitoring on `purchases_30d`"
+        why: "Monitoring might show that the values differ, but it doesn't remove the cause."
+    answer: [b]
+    explanation: |
+      **Training-serving skew** occurs when features are computed differently in training and in
+      production: different code, windows, time zones or data freshness. The model then receives inputs
+      it never saw during training. The standard fix is a single feature definition materialized to an
+      offline store (for training, with point-in-time joins) and an online store (for low-latency
+      serving), which is what feature stores (Feast, Tecton, Databricks, Vertex AI...) provide. Logging
+      the features actually served, and training on those logs, is another way.
+
+  - id: stack-spark-002
+    domain: stack
+    topic: spark
+    tags: [lazy-evaluation, performance]
+    level: 3
+    kind: internals
+    type: single
+    prompt: |
+      ```python
+      events = spark.read.parquet("s3://lake/events/")          # 2 TB
+      recent = (events.filter("event_date >= '2026-09-01'")
+                      .withColumn("amount_eur", to_eur("amount", "currency")))  # an expensive UDF
+
+      print(recent.agg(F.sum("amount_eur")).first()[0])
+      recent.write.parquet("s3://lake/recent_events/")
+      ```
+
+      The Spark UI shows the input being read and the UDF running **twice**. Why, and what is the usual
+      fix?
+    choices:
+      - id: a
+        text: "Each action re-runs the whole lazy plan from the source; `persist()` `recent` before the two actions (then `unpersist()`)"
+        why: "Transformations only build a plan; the sum and the write are two actions, so the plan runs twice. Persisting keeps the computed rows for the second action."
+      - id: b
+        text: "The aggregation forces Spark to load the whole filtered dataset into memory first; compute the sum through `recent.rdd` instead"
+        why: "An aggregation streams through the partitions without holding everything in memory, and the RDD version recomputes the plan too, usually more slowly."
+      - id: c
+        text: "Parquet can't push down string comparisons, so the filter runs twice; cast `event_date` to a proper date type before filtering on it"
+        why: "Whether or not the filter is pushed down, a single plan doesn't run it twice: the double work comes from the two actions."
+      - id: d
+        text: "The UDF is non-deterministic, so Spark re-executes it for safety; mark it as deterministic"
+        why: "Determinism affects optimizations such as reordering, not whether a second action recomputes the plan."
+    answer: [a]
+    explanation: |
+      Spark transformations (`filter`, `withColumn`...) only build a plan; **actions** (`count`, `write`,
+      `collect`...) execute it, and each action executes the plan from the source unless an intermediate
+      result is persisted. When a DataFrame is reused by several actions and is expensive to compute,
+      `persist()` it (in memory and/or on disk) and `unpersist()` it when done. Here, computing the sum
+      from the written files afterwards would also avoid the double work. (An action that doesn't use
+      `amount_eur`, such as a plain `count()`, would not run the UDF at all: the optimizer prunes unused
+      columns.)
+
+  - id: de-sql-006
+    domain: de
+    topic: sql
+    tags: [window-functions, running-total, ties]
+    level: 4
+    kind: internals
+    type: single
+    prompt: |
+      ```sql
+      SELECT account_id, tx_date, amount,
+             SUM(amount) OVER (PARTITION BY account_id ORDER BY tx_date) AS balance
+      FROM transactions;
+      ```
+
+      After a balance of 500, an account has two transactions on the **same day**: +100 and −30. Both
+      rows show `balance = 570`, instead of 600 then 570. Why?
+    choices:
+      - id: a
+        text: "The default frame is `RANGE ... CURRENT ROW`, which includes every row with the same `tx_date`; use a `ROWS` frame and a tie-breaker"
+        why: "In RANGE mode, CURRENT ROW extends to all peers (rows with an equal ORDER BY value), so both same-day rows sum the whole day. `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` with `ORDER BY tx_date, tx_id` gives a true running total."
+      - id: b
+        text: "`SUM` used as a window function ignores the order of rows; compute the running balance with `LAG` instead"
+        why: "The order is used; the issue is which rows the default frame includes."
+      - id: c
+        text: "Window functions run after an implicit `GROUP BY` on the `ORDER BY` columns, so same-day rows are merged first"
+        why: "There is no grouping: each row is kept, and only the frame treats the same-day rows together."
+      - id: d
+        text: "Negative amounts are applied before positive ones within the same day"
+        why: "Both rows get the same value because each includes both transactions, whatever their order."
+    answer: [a]
+    explanation: |
+      When a window has `ORDER BY` but no explicit frame, the SQL standard (and PostgreSQL, BigQuery,
+      Spark SQL...) uses `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. In RANGE mode, rows with
+      the same ordering value are **peers** and are always included together. For running totals,
+      specify `ROWS` and make the ordering unique with a tie-breaker; otherwise ties produce identical
+      cumulative values, and any row-by-row result depends on a non-deterministic order.
+
+  - id: cs-distributed-systems-001
+    domain: cs
+    topic: distributed-systems
+    tags: [partitioning, rebalancing, hashing]
+    level: 3
+    kind: concept
+    type: single
+    prompt: |
+      A cache cluster assigns keys to nodes with `node = hash(key) % N`. Going from **N = 10 to 11
+      nodes** causes a flood of cache misses.
+
+      Which scheme limits how many keys move when a node is added, and roughly what fraction of the keys
+      moves with it?
+    choices:
+      - id: a
+        text: "Consistent hashing (a hash ring with virtual nodes): about 1/11 of the keys move"
+        why: "On a ring, a new node takes over part of the ring from its neighbours: about 1/(N+1) of the keys move, all of them to the new node; virtual nodes keep the shares even."
+      - id: b
+        text: "Range partitioning on the key itself, since with ranges no existing key ever has to move when a node is added"
+        why: "Adding a node to range partitioning means splitting or moving ranges, so some keys do move; ranges also create hotspots with sequential keys."
+      - id: c
+        text: "Keep `hash(key) % N` but with a better, uniform hash function: then only about 1/11 of the keys change node"
+        why: "The modulo is the problem, not the hash: changing N remaps almost every key (about 10/11 of them) whatever the hash function."
+      - id: d
+        text: "Always double the number of nodes (10 to 20): with modulo, only a small fraction of the keys then move"
+        why: "Going from 10 to 20 with modulo still moves about half the keys, and forces you to scale in big steps."
+    answer: [a]
+    explanation: |
+      With `hash % N`, changing N remaps nearly every key (about N/(N+1) of them). **Consistent hashing**
+      places nodes and keys on a hash ring, each key belonging to the next node clockwise, so adding a
+      node only moves the keys of the arc it takes over: about 1/(N+1). Virtual nodes (many points per
+      node) even out the load. It is used by Dynamo-style stores such as Cassandra, by memcached
+      clients and by load balancers; rendezvous hashing is an alternative with the same property.
+
+  - id: ds-feature-engineering-001
+    domain: ds
+    topic: feature-engineering
+    tags: [categorical-features, encoding, cross-validation]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      A gradient-boosted churn model uses `merchant_id` (40,000 distinct values) as a feature. Before cross-validation,
+      you replace each `merchant_id` by the **mean churn rate of that merchant, computed on the whole
+      training set**. CV AUC jumps from 0.74 to 0.91, but the model scores 0.73 on next month's data.
+
+      What went wrong, and what fixes it?
+    choices:
+      - id: a
+        text: "Mean encoding is unsuitable for tree-based models like this one; one-hot encode `merchant_id` into 40,000 binary columns instead"
+        why: "One-hot encoding is an option for some models but doesn't explain the gap; mean (target) encoding works well with trees when it is done correctly."
+      - id: b
+        text: "The encoding uses each row's own label (target leakage); compute it out-of-fold, with smoothing for rare merchants"
+        why: "Each row's encoding contains its own label, a strong leak for merchants with few rows. Encodings computed only from other folds, smoothed towards the global mean, remove it."
+      - id: c
+        text: "Next month's data has drifted; retrain monthly with the same encoding"
+        why: "Drift may exist, but a drop from 0.91 to 0.73 right after adding a target-derived feature points to leakage in the validation, not to drift."
+      - id: d
+        text: "AUC is unreliable with many categories; evaluate with log loss instead"
+        why: "The metric isn't the problem: any metric computed with leaked features is optimistic."
+    answer: [b]
+    explanation: |
+      **Target (mean) encoding** replaces a category by a statistic of the target. Computed on all the
+      training rows, each row's encoding contains its own label, which leaks badly for merchants with
+      few rows: CV looks great, production doesn't. The fix is cross-fitting: for each fold, compute the
+      encodings from the other folds only (scikit-learn's `TargetEncoder` does this in `fit_transform`),
+      and smooth rare categories towards the global mean. In a pipeline, the encoder must be fitted
+      inside each CV training split.
+
+  - id: infra-cost-002
+    domain: infra
+    topic: cost
+    tags: [batch, compute-cost, spark]
+    level: 4
+    kind: design
+    type: single
+    prompt: |
+      A nightly Spark job runs for 3 hours on 40 on-demand workers. Its results are needed by 8:00, and
+      the job may finish up to **an hour later** than today without any problem.
+
+      Which change cuts the compute cost the most while keeping the job reliable?
+    choices:
+      - id: a
+        text: "On-demand driver, spot (preemptible) executors across several instance types, relying on Spark's task retries"
+        why: "Spot capacity is typically 60–90% cheaper; reclaimed executors only cost recomputed tasks, which the hour of slack absorbs, while the on-demand driver keeps the job alive."
+      - id: b
+        text: "Run every node of the cluster, the driver included, on spot instances, to maximize the savings on the whole job"
+        why: "Losing the driver kills the whole job; it should stay on on-demand capacity."
+      - id: c
+        text: "Buy a 3-year reserved-capacity commitment for the 40 instances, which gives the deepest discount per hour"
+        why: "Reservations pay off for capacity used most of the day; for 3 hours a night they cost more than on-demand."
+      - id: d
+        text: "Switch to half as many instances, each twice as large"
+        why: "The same total capacity costs about the same; it doesn't reduce the bill."
+    answer: [a]
+    explanation: |
+      Interruptible capacity (AWS Spot, Google Cloud Spot VMs, Azure Spot) fits **fault-tolerant,
+      time-flexible** batch work: Spark retries lost tasks and recomputes lost shuffle data. Keep the
+      components whose loss is fatal (the driver, a master node) on on-demand capacity, diversify
+      instance types to reduce the chance of losing many at once, and use graceful decommissioning
+      where available. Commitments and reservations suit steady, round-the-clock usage, not a 3-hour
+      nightly job.
+
+  - id: mlops-feature-store-002
+    domain: mlops
+    topic: feature-store
+    tags: [training-data, joins, time]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      You build a training set for a churn model. `labels(customer_id, label_date, churned)` has one row
+      per customer and month. `features(customer_id, valid_from, n_orders_90d, ...)` keeps the
+      **history** of each customer's feature values, with a new row whenever they change.
+
+      How should you join them?
+    choices:
+      - id: a
+        text: "For each label, take the feature row with the latest `valid_from` on or before `label_date` (an as-of join)"
+        why: "Each example then sees exactly the feature values that were known at prediction time, which is what the model will see in production."
+      - id: b
+        text: "For each label row, take the customer's most recent feature row overall, since the latest values are the most complete and accurate ones"
+        why: "The latest values may postdate the label date: the model would learn from the future, and do worse in production, where only past data exists."
+      - id: c
+        text: "Join on `customer_id` only, and average the feature values over all the customer's rows"
+        why: "Averaging mixes past and future values: it leaks future information and blurs the signal."
+      - id: d
+        text: "Take the feature row whose `valid_from` is closest to `label_date`, before or after it"
+        why: "Taking the closest row after the label date still lets information from the future into training."
+    answer: [a]
+    explanation: |
+      Training examples must be built **as of** the prediction time: only feature values that existed at
+      `label_date` may be used. This is a point-in-time (as-of) join: for each label, the latest feature
+      row with `valid_from <= label_date`. Feature stores (Feast, Tecton, Databricks, Vertex AI...)
+      automate it, and many engines offer `ASOF JOIN` (DuckDB, ClickHouse, Snowflake) or `merge_asof` in
+      pandas. Joining on the latest values instead is one of the most common sources of leakage.
+
+  - id: de-streaming-004
+    domain: de
+    topic: streaming
+    tags: [spark-structured-streaming, event-time, late-data]
+    level: 4
+    kind: internals
+    type: single
+    prompt: |
+      A Spark Structured Streaming job counts events in 5-minute tumbling windows on `event_time`:
+
+      ```python
+      counts = (events
+          .withWatermark("event_time", "10 minutes")
+          .groupBy(F.window("event_time", "5 minutes"))
+          .count())
+      counts.writeStream.outputMode("append").format("delta").start(path)
+      ```
+
+      The largest `event_time` seen so far is **12:30**. An event with `event_time` **12:05** now
+      arrives. What happens to it?
+    choices:
+      - id: a
+        text: "The count of the 12:05–12:10 window is increased, and a corrected row for that window is appended to the Delta table as a new version"
+        why: "In append mode a window is written once, when the watermark passes its end, and never revised; this one was already finalized."
+      - id: b
+        text: "It is dropped: the watermark (12:20) has passed the end of its window, which was already emitted and whose state was discarded"
+        why: "The watermark is 12:30 − 10 min = 12:20; the 12:05–12:10 window ended before it, so its result was emitted and its state removed. Later events for it are ignored."
+      - id: c
+        text: "The query fails, because event times must not go backwards within a stream"
+        why: "Out-of-order events are normal: watermarks exist precisely to handle them without failing."
+      - id: d
+        text: "It is counted in the window of its arrival time, 12:30–12:35"
+        why: "The windows are based on `event_time`, the event's own timestamp, not on processing time."
+    answer: [b]
+    explanation: |
+      The watermark is the maximum event time seen minus the allowed lateness: 12:30 − 10 min = 12:20.
+      Windows that end before the watermark are considered complete. In **append** mode, each window is
+      emitted exactly once, when the watermark passes its end, and its state is then removed; events
+      that arrive later for that window are dropped (Spark only guarantees to keep data within the
+      lateness threshold). To accept later data, increase the watermark delay (more state, later
+      results), or use update mode with a sink that can apply corrections. Flink can route such events
+      to a side output instead.
+
+  - id: ds-genai-001
+    domain: ds
+    topic: genai
+    tags: [embeddings, vector-search, similarity]
+    level: 3
+    kind: concept
+    type: single
+    prompt: |
+      You store text embeddings for semantic search. The embedding model's documentation recommends
+      **cosine similarity**, but your vector database only supports the **dot product** (inner product).
+
+      What should you do?
+    choices:
+      - id: a
+        text: "L2-normalize every embedding (documents and queries) to unit length; the dot product then equals cosine similarity"
+        why: "cos(u, v) = u·v / (‖u‖‖v‖); with ‖u‖ = ‖v‖ = 1 it is exactly u·v, and Euclidean distance then ranks results the same way too."
+      - id: b
+        text: "Nothing: dot product and cosine similarity always rank results identically"
+        why: "They differ when vectors have different lengths: the dot product favours long vectors, cosine ignores length."
+      - id: c
+        text: "Use Euclidean distance instead, which is unaffected by vector length"
+        why: "Euclidean distance depends on length too; only after normalization does it rank like cosine."
+      - id: d
+        text: "Project the embeddings down to a few dimensions with PCA first, so that the angle between vectors can be computed exactly"
+        why: "Dimensionality reduction loses information and doesn't turn the dot product into cosine; normalization does."
+    answer: [a]
+    explanation: |
+      Cosine similarity compares directions only. If all vectors are normalized to unit length, the dot
+      product, cosine similarity and Euclidean distance all give the **same ranking**
+      (‖u − v‖² = 2 − 2 u·v). Many embedding models already return normalized vectors, but check:
+      normalizing at indexing and at query time is cheap and makes the choice of metric irrelevant.
+
+  - id: infra-cost-001
+    domain: infra
+    topic: cost
+    tags: [object-storage, storage-classes, retention]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      Application logs land in object storage, about 5 TB per month. They are queried often during the
+      first **30 days**, occasionally until **1 year**, and must be **kept 7 years** for compliance,
+      during which they are almost never read.
+
+      Which lifecycle policy is the most cost-effective?
+    choices:
+      - id: a
+        text: "Keep everything in the standard (hot) class for the full 7 years, so that any read stays fast and never incurs retrieval fees"
+        why: "Paying hot-storage prices for years of almost-never-read data is by far the most expensive option."
+      - id: b
+        text: "Standard for 30 days, then an infrequent-access class until 1 year, then an archive class until 7 years, then delete"
+        why: "Each class matches the access pattern at that age: hot while read often, infrequent-access when reads are rare, archive for long retention; the delete enforces the end of retention."
+      - id: c
+        text: "Move every object to the archive class on the first day, since most logs are never read again after they are written"
+        why: "Archive classes charge per retrieval, take minutes to hours to restore and have minimum storage durations: frequent reads in the first month make this costly and slow."
+      - id: d
+        text: "An automatic tiering class that only moves objects between frequent- and infrequent-access tiers, for the full 7 years"
+        why: "Auto-tiering suits unpredictable access, but without an archive tier it keeps 6 years of almost-never-read data at infrequent-access prices, well above archive pricing, and it adds a per-object monitoring fee."
+    answer: [b]
+    explanation: |
+      Object stores price their classes by **storage cost versus access cost**: colder classes
+      (infrequent access, then archive tiers such as S3 Glacier, GCS Coldline/Archive or Azure
+      Cool/Archive) are cheaper per GB but charge per retrieval, have minimum storage durations and, for
+      archives, slower retrieval. Lifecycle rules move objects by age to match the access pattern, and
+      delete them when the retention period ends.
+
+  - id: swe-architecture-001
+    domain: swe
+    topic: architecture
+    tags: [events, consistency, dual-write]
+    level: 4
+    kind: design
+    type: single
+    prompt: |
+      The order service does:
+
+      ```python
+      with db.transaction():
+          db.insert_order(order)
+      kafka.produce("orders", order_created_event(order))
+      ```
+
+      Occasionally the service crashes between the commit and the produce: the order exists, but
+      downstream services never hear about it. Moving the `produce` call inside the transaction block
+      doesn't solve it either.
+
+      What is the standard solution?
+    choices:
+      - id: a
+        text: "Produce the event first, then insert the order"
+        why: "A crash after producing announces an order that was never stored: the inconsistency is just reversed."
+      - id: b
+        text: "Insert the event into an outbox table in the same transaction as the order, and let a relay (poller or CDC) publish it"
+        why: "The order and its event commit atomically in the database; the relay then publishes outbox rows at least once, and consumers deduplicate by event id."
+      - id: c
+        text: "Retry the `produce` call in a loop until it succeeds"
+        why: "Retries don't help when the process crashes: the in-memory intention to publish is lost."
+      - id: d
+        text: "Wrap the database write and the Kafka produce in one distributed transaction, using two-phase commit across both systems"
+        why: "Kafka doesn't take part in XA two-phase commits with databases; 2PC is also slow and fragile."
+    answer: [b]
+    explanation: |
+      Writing to a database and to a message broker are two separate commits: such a **dual write** can't
+      be made atomic by ordering the calls. The **transactional outbox** pattern stores the event in the
+      database within the business transaction, and a relay (a poller, or CDC such as Debezium's outbox
+      router) publishes it. Delivery is at-least-once, so consumers must be idempotent. Event sourcing,
+      or consuming the database's change log directly, are related approaches.
+
+  - id: de-data-modeling-004
+    domain: de
+    topic: data-modeling
+    tags: [scd-type-2, dimensions, joins]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      `dim_customer` is now a **type 2 slowly changing dimension**: when a customer moves to another
+      region, the current row is closed (`valid_to` is set) and a new row is inserted, with a new
+      surrogate key `customer_sk`. Since then, this report **double-counts** the revenue of customers
+      who moved:
+
+      ```sql
+      SELECT d.region, SUM(f.amount) AS revenue
+      FROM fct_sales f
+      JOIN dim_customer d ON d.customer_id = f.customer_id
+      GROUP BY d.region;
+      ```
+
+      What is the cause, and the usual fix?
+    choices:
+      - id: a
+        text: "The join on `customer_id` matches every version of a moved customer; join on the surrogate key `customer_sk` recorded in the fact"
+        why: "Each fact row joins to all versions of its customer (2 after one move), doubling its amount. With the surrogate key captured at load time, each fact joins to the version valid when the sale happened."
+      - id: b
+        text: "`SUM` counts NULL amounts twice; use `SUM(COALESCE(f.amount, 0))`"
+        why: "SUM ignores NULLs; the duplication comes from the join, which produces one row per version of the customer."
+      - id: c
+        text: "Type 2 dimensions can't be joined directly to facts; switch the dimension back to overwriting (type 1) and keep the history elsewhere"
+        why: "Type 2 dimensions are designed to be joined to facts; going back to type 1 loses the history that was asked for."
+      - id: d
+        text: "Use `SUM(DISTINCT f.amount)` so that each sale is only counted once, whatever the number of matching customer rows"
+        why: "`SUM(DISTINCT)` also merges different sales that happen to have the same amount, so it under-counts instead."
+    answer: [a]
+    explanation: |
+      In a type 2 SCD, the business key is no longer unique in the dimension. Facts should carry the
+      **surrogate key** of the dimension version that was current when the fact was loaded (or be joined
+      on the business key plus `fact_date BETWEEN valid_from AND valid_to`). This also attributes the
+      revenue to the region at the time of the sale. Reports that want the customer's *current* region
+      can join to the current rows only (`is_current`), which is a different, explicit choice.
+
+  - id: ds-regression-001
+    domain: ds
+    topic: regression
+    tags: [target-transform, skewed-data, forecasting]
+    level: 4
+    kind: internals
+    type: single
+    prompt: |
+      To forecast **total** monthly spend, you train a regression on `log(spend)` (spend is strongly
+      right-skewed) and predict `exp(model(x))` for each customer. Per-customer errors look reasonable,
+      but the **sum** of the predictions is consistently about **13% below** the actual total.
+
+      Why?
+    choices:
+      - id: a
+        text: "The log transform makes the model underfit, so the predictions are noisy and biased"
+        why: "Noise alone doesn't create a systematic bias in one direction; the back-transformation does."
+      - id: b
+        text: "exp(mean of log(spend)) estimates the geometric mean of spend (the median for log-normal data), which is below its mean"
+        why: "By Jensen's inequality, exp(E[log Y]) ≤ E[Y]. Correct it with a smearing factor, or model the mean directly with a Poisson, gamma or Tweedie loss."
+      - id: c
+        text: "Customers with zero spend can't be log-transformed, so they were silently dropped from the training data by the pipeline"
+        why: "Dropping the zeros would make predictions too high for customers who spend nothing, not too low."
+      - id: d
+        text: "The model needs more training data to estimate the mean correctly"
+        why: "The bias doesn't shrink with more data: it comes from the transformation, not from estimation error."
+    answer: [b]
+    explanation: |
+      A model trained with squared error on `log(y)` estimates E[log y | x]. Back-transforming with `exp`
+      gives the **geometric mean** (for log-normal data, the median), which underestimates E[y | x], so
+      sums and averages come out too low. When totals matter, either apply a retransformation
+      correction (for log-normal errors, multiply by exp(σ²/2), or use Duan's smearing estimate), or fit
+      the mean directly with a loss suited to skewed positive targets (Poisson, gamma, Tweedie).
+
+  - id: mlops-deployment-001
+    domain: mlops
+    topic: deployment
+    tags: [rollout, fraud, risk]
+    level: 3
+    kind: design
+    type: single
+    prompt: |
+      A new fraud model is ready. Its offline metrics are better, but the team wants to check its
+      **latency** and its **score distribution on real production traffic** before it influences any
+      decision, with **no risk to customers**.
+
+      Which release strategy fits?
+    choices:
+      - id: a
+        text: "A/B test: route 50% of the transactions to the new model and compare fraud losses after a month"
+        why: "Half of the decisions would be made by an unproven model: that is real customer impact."
+      - id: b
+        text: "Shadow deployment: the new model receives a copy of live requests, and its predictions are logged but not used"
+        why: "Shadow mode exercises the full production path (traffic, features, latency) and allows comparing its scores with the current model's, while decisions still come from the current model."
+      - id: c
+        text: "Canary release: let the new model make the decision for 5% of transactions, then increase the share gradually if all looks well"
+        why: "A canary limits the impact but still lets the new model make real decisions; it usually comes after shadowing."
+      - id: d
+        text: "Backtest on last month's logged transactions only"
+        why: "Useful, but replaying logs doesn't measure production latency, integration issues or today's traffic."
+    answer: [b]
+    explanation: |
+      A typical progression for risky models: offline evaluation → **shadow** (mirrored traffic, logged
+      predictions, no effect) → **canary** (a small share of real decisions) → full rollout, or an A/B
+      test when the business impact itself must be measured. Shadow mode catches latency, feature and
+      integration problems, and differences in score distribution, at no customer risk; it can't measure
+      business outcomes, since its predictions aren't acted on.
+
+  - id: de-orchestration-001
+    domain: de
+    topic: orchestration
+    tags: [airflow, scheduling, reruns]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      An Airflow task loads "yesterday's" orders:
+
+      ```python
+      def load_orders():
+          day = (datetime.now() - timedelta(days=1)).date()
+          run_sql(f"INSERT INTO orders_daily SELECT * FROM orders_raw WHERE order_date = '{day}'")
+      ```
+
+      A failed run of **Monday's** schedule is retried on **Wednesday**, and a backfill of last month
+      loads the same day 30 times. What is the root problem, and the fix?
+    choices:
+      - id: a
+        text: "It reads the wall clock; derive the day from the run's logical date or data interval, and overwrite that day's partition instead of inserting"
+        why: "Each run then processes exactly its own interval, whatever the day it executes, and overwriting the partition makes reruns idempotent instead of duplicating rows."
+      - id: b
+        text: "Airflow tasks don't retry by default; set `retries=3` with a short delay so that a failure is retried on the day it happened"
+        why: "Retrying sooner narrows the window, but any later rerun or backfill still computes the wrong date from the clock."
+      - id: c
+        text: "The DAG needs `catchup=False` to prevent backfills"
+        why: "That only disables automatic catch-up runs; it doesn't make manual reruns or retries load the right day."
+      - id: d
+        text: "Use `datetime.utcnow()` instead of `datetime.now()` to avoid time-zone shifts"
+        why: "Time zones aren't the issue: any clock-based date is wrong when the run doesn't execute on its scheduled day."
+    answer: [a]
+    explanation: |
+      Orchestrators give each run a **logical date / data interval** (`{{ ds }}`, `data_interval_start`
+      in Airflow, whose exact meaning depends on the timetable and version; equivalents in Dagster or
+      Prefect). Tasks should derive what they process from it, not from "now", so that retries, reruns
+      and backfills are deterministic. Combined with an idempotent write
+      (overwriting the partition, or delete-then-insert in one transaction), running a task twice gives
+      the same result as running it once.
+
+  - id: cs-distributed-systems-002
+    domain: cs
+    topic: distributed-systems
+    tags: [replication, consistency, databases]
+    level: 4
+    kind: design
+    type: single
+    prompt: |
+      Writes go to a primary database; reads go to **asynchronous read replicas** that lag by up to a
+      few seconds. Users complain that right after they **edit their profile**, the page still shows
+      the old values.
+
+      Which fix gives these users **read-your-writes** consistency with the least impact on
+      scalability?
+    choices:
+      - id: a
+        text: "Switch all the replicas to synchronous replication, so that every replica always has the latest committed data"
+        why: "Every write would wait for all replicas: higher write latency and lower availability, for a problem that only concerns the writer's own reads."
+      - id: b
+        text: "Send all reads to the primary"
+        why: "It fixes the anomaly but gives up the read scaling that the replicas provide."
+      - id: c
+        text: "Route a user's reads to the primary for a short time after that user writes (or to a replica that has caught up with the write)"
+        why: "Only the user who wrote needs to see the write immediately; sticky reads to the primary, or waiting for a replica that has applied the write, give read-your-writes while other reads stay on replicas."
+      - id: d
+        text: "Add a cache in front of the replicas with a 5-second TTL"
+        why: "A cache can serve stale data for even longer; it doesn't help users see their own writes."
+    answer: [c]
+    explanation: |
+      Asynchronous replication gives **eventual consistency** on replicas: a client can write, then read
+      stale data from a lagging replica. **Read-your-writes**, a session guarantee, can be provided per
+      user: route the writer's reads to the primary for a while, or track the write's log position and
+      only read from replicas that have applied it (some databases and drivers support this with
+      causal-consistency tokens). Synchronous replication or primary-only reads also fix it, at a much
+      higher cost.
+
+  - id: infra-security-004
+    domain: infra
+    topic: security
+    tags: [personal-data, analytics, access-control]
+    level: 3
+    kind: design
+    type: multi
+    prompt: |
+      Analysts must count distinct customers and join `orders`, `tickets` and `web_sessions` on the
+      customer, but they **must not see email addresses**, which are today the only customer identifier
+      shared by these tables.
+
+      Which measures are appropriate? **Select all that apply.**
+    choices:
+      - id: a
+        text: "Replace the email with a keyed hash (an HMAC with a secret key held by the platform team), computed the same way in every table"
+        why: "The same email gives the same token everywhere, so joins and distinct counts work, and without the key nobody can reverse it by hashing candidate emails."
+      - id: b
+        text: "Replace the email with its plain SHA-256 hash, which makes the data anonymous"
+        why: "Anyone can hash a list of known emails and match them: an unkeyed hash is easy to reverse that way, and the data remains personal data under GDPR."
+      - id: c
+        text: "Keep the raw emails in a separate, restricted table that only the few roles needing them can read"
+        why: "Separating identifying data limits who can re-identify customers, and makes that access easy to audit."
+      - id: d
+        text: "Apply column masking so that analysts see `***@***.com` in the email column, and let them join and count on that column"
+        why: "Masked values are the same for every customer, so joins and distinct counts on them are meaningless: masking hides values, it doesn't produce join keys."
+      - id: e
+        text: "Drop the email column everywhere; analysts can join on first name, last name and birth date instead"
+        why: "Names and birth dates are still personal data, and they make unreliable join keys (duplicates, typos)."
+    answer: [a, c]
+    explanation: |
+      **Pseudonymization** replaces identifiers with tokens that still allow joins and counts. It needs a
+      keyed hash (HMAC) or a tokenization service: plain hashes of emails or phone numbers are trivially
+      reversed with a dictionary. Under GDPR, pseudonymized data is still personal data, so access
+      control still applies: keep the raw identifiers separate and restricted. Role-based column masking
+      is useful to hide raw values from people who browse a table, but masked values can't serve as join
+      keys.
+
+  - id: de-data-modeling-005
+    domain: de
+    topic: data-modeling
+    tags: [dimensional-modeling, denormalization, columnar]
+    level: 4
+    kind: design
+    type: single
+    prompt: |
+      On a modern columnar warehouse, a team considers replacing its star schema (a 5-billion-row sales
+      fact table and a `dim_product` of 50,000 products) by **one wide denormalized table**, with all the
+      product attributes copied into each sale row.
+
+      Which argument for keeping the star schema is valid?
+    choices:
+      - id: a
+        text: "The wide table costs much more to store, since every product attribute is copied into each of the 5 billion sale rows"
+        why: "Repeated values in a column compress extremely well (dictionary and run-length encoding): the storage overhead is usually small."
+      - id: b
+        text: "A renamed category is a 1-row update in the dimension, but a rewrite of billions of fact rows in the wide table"
+        why: "Changing attributes is where denormalization hurts: every copy must be rewritten, or reports mix old and new values. The star schema keeps each attribute in one place."
+      - id: c
+        text: "The star schema queries faster, since the fact table is much narrower than the wide table"
+        why: "Columnar engines only read the referenced columns, so the width matters little, and joins have a cost: the wide table often queries faster."
+      - id: d
+        text: "BI tools can't handle tables with hundreds of columns, so the wide table would be unusable for dashboards"
+        why: "BI tools query wide tables routinely; many teams publish exactly such tables for them."
+    answer: [b]
+    explanation: |
+      On columnar warehouses, a wide "one big table" can be fast to query (columns are read selectively
+      and repeated values compress well), and some teams publish wide tables for BI tools. The **star
+      schema** still wins on maintainability: each attribute lives in one place, history is handled
+      explicitly in the dimensions (SCD types), and dimensions are shared across facts (conformed
+      dimensions). A common compromise is a star schema as the modeled layer, with wide tables or views
+      derived from it for consumption.
+
+  - id: ds-ml-validation-004
+    domain: ds
+    topic: ml-validation
+    tags: [hyperparameter-tuning, model-selection, evaluation]
+    level: 3
+    kind: concept
+    type: single
+    prompt: |
+      You try **500 hyperparameter configurations** with 5-fold cross-validation and pick the best one,
+      whose mean CV AUC is **0.862**. You report 0.862 as the expected production performance.
+
+      What is the problem?
+    choices:
+      - id: a
+        text: "The best of 500 noisy scores is biased upwards; measure it on data not used for the choice (a test set or nested CV)"
+        why: "Some configurations win partly by luck on these folds, and the winner's score includes that luck. An untouched test set, or the outer loop of nested CV, measures the whole selection procedure."
+      - id: b
+        text: "5 folds are too few: with 10 or more folds, the score of the best configuration would become an unbiased estimate of performance"
+        why: "More folds reduce the variance of each estimate, but picking the maximum of many estimates still biases it upwards."
+      - id: c
+        text: "AUC can't be averaged across folds; you must pool the predictions first"
+        why: "Averaging fold AUCs is standard practice; pooling is an alternative, not a fix for selection bias."
+      - id: d
+        text: "Nothing is wrong, as long as the folds were stratified and shuffled before the search started"
+        why: "Stratification makes folds representative, but doesn't remove the bias of selecting the maximum."
+    answer: [a]
+    explanation: |
+      Model selection is part of training. When many candidates are compared on the same validation
+      data, the winner's validation score is a **biased estimate** (the "winner's curse"), and the bias
+      grows with the number of candidates and with the noise of each estimate. Keep a test set untouched
+      until the very end, or use **nested cross-validation** (an inner loop to tune, an outer loop to
+      evaluate) to report an honest estimate.
+
+  - id: stack-analytics-engines-001
+    domain: stack
+    topic: analytics-engines
+    tags: [single-node, parquet, dataframes]
+    level: 3
+    kind: design
+    type: single
+    prompt: |
+      An analyst needs to explore **30 GB of Parquet** files (about 400 million rows) with group-bys and
+      joins, on a laptop with **16 GB of RAM**.
+
+      Which tool choice gives good results with the least setup?
+    choices:
+      - id: a
+        text: "pandas, loading the whole dataset with `pd.read_parquet` and then using the usual DataFrame operations on it"
+        why: "pandas loads everything into memory, typically several times the on-disk size: 30 GB of Parquet won't fit in 16 GB of RAM."
+      - id: b
+        text: "An embedded columnar engine such as DuckDB or Polars (lazy or streaming mode), querying the Parquet files directly"
+        why: "They run vectorized, multi-threaded queries on Parquet, read only the needed columns and row groups, and can spill to disk when an operation doesn't fit in memory."
+      - id: c
+        text: "A Spark cluster on a cloud provider, since the dataset is bigger than the laptop's memory and Spark is built for that"
+        why: "Spark would work, but a cluster is a lot of setup and cost for data that a single machine can process."
+      - id: d
+        text: "Load the files into a local PostgreSQL database first, then query it with SQL"
+        why: "Loading 400 million rows into a row-oriented database is slow, and its aggregations are slower than a columnar engine's on Parquet."
+    answer: [b]
+    explanation: |
+      Single-node columnar engines (DuckDB, Polars, also DataFusion or chDB) handle tens to hundreds of
+      GB on one machine: they read Parquet lazily with column and row-group pruning, run vectorized and
+      in parallel, and stream or spill larger-than-memory work to disk. A distributed engine like Spark
+      becomes worthwhile when the data or the computation truly exceeds one machine, or when the
+      pipeline already runs on a cluster.
+
+  - id: mlops-monitoring-002
+    domain: mlops
+    topic: monitoring
+    tags: [drift, fraud, retraining]
+    level: 4
+    kind: concept
+    type: single
+    prompt: |
+      A fraud model's **input feature distributions** are stable (all the drift metrics are green), yet
+      over two months its **precision at the same threshold** has dropped from 0.62 to 0.41, as
+      confirmed by investigators' labels.
+
+      What is the most likely explanation, and the right response?
+    choices:
+      - id: a
+        text: "Data drift: the inputs changed; recalibrate the drift thresholds so that they fire earlier"
+        why: "According to the monitors the inputs didn't change; lowering thresholds would only add noise."
+      - id: b
+        text: "Concept drift: the link between inputs and fraud changed; retrain on recent labels and monitor performance, not only inputs"
+        why: "P(X) is stable but P(fraud | X) changed, typically because fraudsters adapt to the model. Input monitors can't see this; only label-based performance monitoring can."
+      - id: c
+        text: "Label noise: investigators have recently started labelling cases less carefully than before, so the drop can safely be ignored"
+        why: "Possible, but nothing supports it; a steady, large drop in precision as an adversary adapts is the classic pattern of concept drift."
+      - id: d
+        text: "The decision threshold has become outdated; recalibrate the scores and choose a new threshold, without retraining"
+        why: "A new threshold trades precision for recall, but doesn't restore the model's ability to separate fraud: the relation between inputs and fraud changed, so the model needs recent labels."
+    answer: [b]
+    explanation: |
+      **Data drift** (covariate shift) is a change in P(X); **concept drift** is a change in P(y | X).
+      Input monitors detect the first, not the second. In adversarial domains such as fraud, concept
+      drift is expected: monitor performance on labelled outcomes (with their delay), retrain on recent
+      data on a schedule or on a trigger, and prefer features that are harder to game.
+
+  - id: de-warehousing-003
+    domain: de
+    topic: warehousing
+    tags: [query-cost, columnar, pruning]
+    level: 3
+    kind: practical
+    type: multi
+    prompt: |
+      An engine that **bills by bytes read** queries a 40 TB table of Parquet files, partitioned by
+      `event_date` and sorted (clustered) by `customer_id` within each partition:
+
+      ```sql
+      SELECT * FROM events WHERE country = 'FR' LIMIT 10;
+      ```
+
+      Which changes reduce the bytes read? **Select all that apply.**
+    choices:
+      - id: a
+        text: "Select only the columns you need instead of `*`"
+        why: "Columnar formats read only the referenced columns, so fewer columns means fewer bytes."
+      - id: b
+        text: "Add a filter on `event_date` for the period you actually need"
+        why: "Partition pruning skips every partition that can't match."
+      - id: c
+        text: "Run the query with more compute (a larger warehouse or more slots)"
+        why: "More compute makes the scan faster, but the same bytes are read and billed."
+      - id: d
+        text: "Also filter on `customer_id` when you only need some customers"
+        why: "The files are sorted by `customer_id`, so their min/max statistics let the engine skip files and row groups that can't contain the requested ids."
+      - id: e
+        text: "Add `ORDER BY event_date` to the query"
+        why: "Sorting the result adds work after the scan; it doesn't reduce what is read."
+    answer: [a, b, d]
+    explanation: |
+      With columnar files, the bytes read depend on **which columns** are referenced and **which files
+      or row groups** can be skipped: partition pruning (filters on the partition column) and min/max
+      statistics on sorted or clustered columns. `LIMIT` usually doesn't reduce the scan, a common
+      misconception (BigQuery's on-demand pricing is the classic example), and more compute changes the
+      speed, not the bytes.
+
+  - id: infra-security-003
+    domain: infra
+    topic: security
+    tags: [gdpr, deletion, lakehouse]
+    level: 4
+    kind: practical
+    type: single
+    prompt: |
+      A customer exercises the GDPR **right to erasure**. You run
+      `DELETE FROM events WHERE customer_id = 123` on a Delta Lake or Iceberg table configured in
+      **copy-on-write** mode (affected files are rewritten without the deleted rows), and the rows no
+      longer appear in queries.
+
+      What else is needed for the data to actually be erased?
+    choices:
+      - id: a
+        text: "Nothing: the `DELETE` has removed the rows from the table's Parquet files"
+        why: "Parquet files are immutable: the delete wrote new files and a new snapshot, and the old files, which still contain the rows, still exist."
+      - id: b
+        text: "Expire the old snapshots and delete unreferenced files (`VACUUM`, `expire_snapshots`), and erase other copies (backups, downstream tables)"
+        why: "Time travel keeps older snapshots, which still reference files containing the customer's rows; only expiring them and deleting those files erases the data."
+      - id: c
+        text: "Run `OPTIMIZE` (compaction) on the table, so that the files containing the deleted rows are rewritten"
+        why: "With copy-on-write the current files no longer contain the rows; the old files remain reachable through older snapshots, which compaction doesn't remove."
+      - id: d
+        text: "Restart the query engine so that its caches are cleared"
+        why: "Caches aren't the problem: the data remains in older files referenced by earlier snapshots."
+    answer: [b]
+    explanation: |
+      In table formats, `DELETE` creates a **new snapshot**: affected files are rewritten (copy-on-write)
+      or masked with delete files or deletion vectors (merge-on-read, which also needs a rewrite before
+      the rows are physically gone). Previous snapshots, and the files holding the deleted rows, remain
+      for time travel until **snapshot expiration and file cleanup** (`VACUUM`, `expire_snapshots` and
+      orphan-file removal). An erasure process must also cover backups, replicas, derived tables and
+      exports. Crypto-shredding (encrypting each person's data with its own key, then destroying the
+      key) is an alternative for stores that are hard to rewrite.
+
+  - id: swe-dependencies-001
+    domain: swe
+    topic: dependencies
+    tags: [python, reproducibility, ci]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      A nightly Python job installs its dependencies with `pip install -r requirements.txt`, where the
+      file lists `pandas`, `pyarrow` and `requests` **without versions**. One night it fails after a new
+      release of a transitive dependency, although nobody changed the code.
+
+      What is the standard fix?
+    choices:
+      - id: a
+        text: "Pin only the three direct dependencies to exact versions in `requirements.txt`, and leave the rest to the resolver"
+        why: "Direct pins help, but transitive dependencies (the culprit here) can still change from one install to the next."
+      - id: b
+        text: "Install from a lockfile pinning every direct and transitive dependency (with hashes), and update it on purpose via reviewed PRs"
+        why: "Every install then gets the same, tested versions, and upgrades happen deliberately, with tests, instead of at random."
+      - id: c
+        text: "Always install the latest versions with `pip install -U`, so that bug fixes arrive as soon as possible"
+        why: "That's what broke the job: every run gets whatever was released that day."
+      - id: d
+        text: "Vendor the dependencies by copying their source code into the repository, so that the job never downloads anything at install time"
+        why: "It freezes the versions, but makes upgrades and security patches painful and bloats the repository; a lockfile gives the same reproducibility."
+    answer: [b]
+    explanation: |
+      Reproducible environments separate **intent** (loose constraints on direct dependencies, e.g. in
+      `pyproject.toml`) from **resolution** (a lockfile with the exact versions, ideally with hashes, of
+      the whole dependency tree: `uv.lock`, `poetry.lock`, pip-tools' compiled `requirements.txt`,
+      `conda-lock`). Install from the lockfile in CI and production, and update it deliberately, with
+      tests, often through bots such as Dependabot or Renovate. A container image digest pins the system
+      layer the same way.
+
+  - id: de-streaming-005
+    domain: de
+    topic: streaming
+    tags: [kafka, consumers, delivery-guarantees]
+    level: 3
+    kind: design
+    type: multi
+    prompt: |
+      A consumer reads payment events from Kafka, writes each one to a PostgreSQL table, then **commits
+      its offsets**. After a crash between the database write and the offset commit, the restarted
+      consumer re-reads the events and **inserts duplicates**.
+
+      Which changes give correct (effectively-once) results? **Select all that apply.**
+    choices:
+      - id: a
+        text: "Commit the offsets before writing to the database"
+        why: "A crash after the commit and before the write then skips events: this trades duplicates for data loss (at-most-once)."
+      - id: b
+        text: "Write with an upsert (or insert-if-absent) keyed on the event's unique id, so that reprocessing an event has no effect"
+        why: "An idempotent write makes redelivery harmless: at-least-once delivery plus idempotent processing gives effectively-once results."
+      - id: c
+        text: "Enable the idempotent producer on the services that publish the events"
+        why: "Producer idempotence removes duplicates caused by producer retries when writing to Kafka; it does nothing for a consumer that reprocesses events."
+      - id: d
+        text: "Store the consumed offsets in the same PostgreSQL transaction as the rows, and on startup seek to the offsets stored there"
+        why: "The results and the progress then commit atomically: both are saved or neither is, so nothing is duplicated or lost."
+      - id: e
+        text: "Increase `session.timeout.ms` so that the consumer is less likely to be considered dead"
+        why: "Fewer rebalances make the problem rarer, but a crash still causes redelivery."
+    answer: [b, d]
+    explanation: |
+      Kafka consumers are naturally **at-least-once**: the progress (the offset) and the side effect (the
+      database write) are two separate steps. Two standard ways to get effectively-once results: make
+      the side effect **idempotent** (upsert or deduplicate on a unique event id), or commit the side
+      effect and the offset **atomically**, in the same transaction in the sink. Kafka's own
+      exactly-once transactions only cover reading from and writing to Kafka topics.
+
+  - id: ds-genai-002
+    domain: ds
+    topic: genai
+    tags: [llm-evaluation, pairwise-comparison, bias]
+    level: 4
+    kind: practical
+    type: multi
+    prompt: |
+      You compare two versions of a chatbot with an **LLM as a judge**: for each test question, the judge
+      sees both answers and picks the better one. Version A wins **71%** of the comparisons when its
+      answer is shown first, but only **38%** when it is shown second.
+
+      Which practices make this evaluation trustworthy? **Select all that apply.**
+    choices:
+      - id: a
+        text: "Judge every pair in both orders, and count a win only when the two verdicts agree (otherwise a tie)"
+        why: "This cancels the judge's position bias, which the gap between 71% and 38% reveals."
+      - id: b
+        text: "Measure the judge's agreement with human ratings on a sample of the comparisons before trusting it"
+        why: "Agreement with humans (e.g. Cohen's kappa) shows whether the judge measures what you actually care about."
+      - id: c
+        text: "Give the judge an explicit rubric listing the criteria to check (correctness, completeness, grounding...)"
+        why: "Explicit criteria make verdicts more consistent and less driven by style or length."
+      - id: d
+        text: "Tell the judge to prefer the longer answer whenever it can't decide"
+        why: "LLM judges already tend to favour longer answers (verbosity bias); this amplifies it."
+      - id: e
+        text: "Use version B itself as the judge, since it knows the domain best"
+        why: "Models tend to prefer outputs like their own (self-preference bias); the judge should be independent of the systems compared."
+    answer: [a, b, c]
+    explanation: |
+      LLM-as-judge evaluations have known biases: **position bias** (favouring the first or second
+      answer), **verbosity bias** (favouring longer answers) and **self-preference**. Standard
+      mitigations: evaluate both orders, use a clear rubric, use a judge independent of the systems
+      compared, and validate the judge against human labels on a sample. Report ties and confidence
+      intervals too: a few dozen comparisons are noisy.
+
+  - id: mlops-rag-001
+    domain: mlops
+    topic: rag
+    tags: [genai, retrieval, search]
+    level: 3
+    kind: design
+    type: single
+    prompt: |
+      A support chatbot uses retrieval-augmented generation (RAG) over product manuals, with retrieval
+      based only on **dense embeddings**. It handles conceptual questions well, but fails on questions
+      that mention **exact part numbers or error codes** such as `XK-4402` or `E1047`: the right manual
+      page is not among the retrieved chunks.
+
+      Which change addresses this most directly?
+    choices:
+      - id: a
+        text: "Switch the generation step to a larger, more capable LLM with a longer context window"
+        why: "The generator never sees the right page; a better model can't use context it isn't given."
+      - id: b
+        text: "Hybrid search: add keyword (BM25) retrieval next to the embeddings and merge both result lists"
+        why: "Lexical retrieval matches rare exact tokens such as codes and part numbers, where embeddings are weak; merging the lists (e.g. with reciprocal rank fusion) keeps the semantic matches too."
+      - id: c
+        text: "Increase the chunk size so that each retrieved chunk carries a larger share of the manual's content"
+        why: "Larger chunks dilute each embedding further and don't change how embeddings represent rare exact strings."
+      - id: d
+        text: "Lower the temperature of the LLM to 0"
+        why: "Temperature affects how the answer is generated, not which documents are retrieved."
+    answer: [b]
+    explanation: |
+      Dense embeddings capture meaning but represent rare exact strings (ids, codes, names) poorly.
+      **Hybrid retrieval** combines lexical search (BM25) with vector search, typically merged with
+      reciprocal rank fusion, and a cross-encoder **reranker** can then reorder the top candidates. When
+      retrieval fails, fix retrieval: generation settings can't recover a document that wasn't
+      retrieved.
+
+  - id: de-cdc-002
+    domain: de
+    topic: cdc
+    tags: [merge, change-events, ordering]
+    level: 4
+    kind: practical
+    type: single
+    prompt: |
+      A job applies change events from a CDC stream to a lakehouse table every 5 minutes:
+
+      ```sql
+      MERGE INTO customers t
+      USING batch s ON t.id = s.id
+      WHEN MATCHED AND s.op = 'd' THEN DELETE
+      WHEN MATCHED THEN UPDATE SET *
+      WHEN NOT MATCHED AND s.op != 'd' THEN INSERT *;
+      ```
+
+      A batch sometimes contains **several changes for the same `id`** (for example an insert and then
+      two updates). Each event carries the source's log sequence number `lsn`. What should the job do?
+    choices:
+      - id: a
+        text: "Run the MERGE as is: the engine applies the rows of the batch in their arrival order"
+        why: "MERGE has no notion of row order in its source; most engines raise an error when several source rows match the same target row, or give a nondeterministic result."
+      - id: b
+        text: "Keep only the change with the highest `lsn` per `id` in the batch, and apply it only if newer than the table's stored `lsn`"
+        why: "The source's sequence number gives the true commit order; keeping the last change per key makes the MERGE well-defined, and the comparison with the stored `lsn` ignores replayed or out-of-order old events."
+      - id: c
+        text: "Deduplicate the batch by keeping, for each `id`, the change with the most recent ingestion timestamp in the lake's landing zone"
+        why: "Ingestion time reflects when events reached the lake, not the order in which the source committed them; with retries or parallel partitions it can be wrong."
+      - id: d
+        text: "Switch from MERGE to plain INSERT, and let readers pick the latest row for each `id` at query time"
+        why: "It works, but it pushes deduplication into every query, grows the table forever and handles deletes poorly; the standard is to compact changes at write time."
+    answer: [b]
+    explanation: |
+      MERGE requires at most one source row per target row (Delta Lake, BigQuery, Snowflake and others
+      raise an error or behave nondeterministically otherwise). For CDC, reduce each batch to the
+      **latest change per key**, ordered by the source's commit order (LSN, binlog position, SCN), not by
+      arrival time; store that position in the table and only apply newer changes, so that replays and
+      late duplicates are harmless. Deletes are applied as the latest change, like any other.
+
+  - id: infra-reliability-002
+    domain: infra
+    topic: reliability
+    tags: [slo, error-budget, availability]
+    level: 3
+    kind: concept
+    type: single
+    prompt: |
+      A service has an availability **SLO of 99.9% over a 30-day month**. Halfway through the month,
+      incidents have already caused **45 minutes** of unavailability.
+
+      What does this mean under a typical error-budget policy?
+    choices:
+      - id: a
+        text: "The budget is about 4.3 hours per month, so there is plenty of room left"
+        why: "4.3 hours per month corresponds to 99.4%; 99.9% allows only about 43 minutes."
+      - id: b
+        text: "The ~43-minute budget is spent: reliability work takes priority over risky releases for the rest of the window"
+        why: "30 days × 24 h × 60 min × 0.1% ≈ 43 minutes. Error-budget policies typically freeze or slow down feature releases once the budget is spent, and redirect effort to reliability."
+      - id: c
+        text: "The SLO is breached, which means the provider now owes contractual penalties or service credits to its customers"
+        why: "Penalties come from an SLA, a contract with customers; an SLO is an internal target, usually stricter than the SLA."
+      - id: d
+        text: "The team should raise the SLO to 99.99% to force more discipline"
+        why: "A stricter target with the same reliability only exhausts the budget faster; the SLO should reflect what users need."
+    answer: [b]
+    explanation: |
+      An **SLO** sets a reliability target; its complement is the **error budget**: 0.1% of a 30-day
+      month is about 43 minutes of downtime (or 0.1% of requests failing, for a request-based SLO).
+      While budget remains, teams can take risks (releases, experiments); once it is spent, the policy
+      shifts priority to reliability. **SLAs** are the contractual version, with penalties, and are set
+      looser than the internal SLOs.
+
+  - id: de-observability-001
+    domain: de
+    topic: observability
+    tags: [freshness, monitoring, data-quality]
+    level: 3
+    kind: concept
+    type: single
+    prompt: |
+      Every task of the nightly pipeline has been **green** for a week, yet the sales dashboard has
+      shown the **same numbers since Tuesday**: the upstream system stopped exporting new files, and
+      the pipeline successfully processed "nothing new" every night.
+
+      What monitoring would have caught this?
+    choices:
+      - id: a
+        text: "Alerting on task failures, retries and run durations in the orchestrator, with on-call escalation"
+        why: "That was already in place: no task failed, since processing zero new files counts as a success."
+      - id: b
+        text: "Freshness and volume checks on the data: alert when the newest `order_ts` is too old, or when a run loads no rows"
+        why: "Job status describes the pipeline; freshness and volume describe the data, which is what users depend on. Both checks would have fired on Wednesday."
+      - id: c
+        text: "Monitoring CPU, memory and disk usage of the pipeline's workers, and alerting on anomalies"
+        why: "Infrastructure metrics look normal, even better than usual, when there is no data to process."
+      - id: d
+        text: "A schema check on the source files"
+        why: "There were no new files to check, and the old files had the right schema."
+    answer: [b]
+    explanation: |
+      Pipeline monitoring (task status, durations) and **data observability** are different things: a
+      pipeline can succeed while its data is stale, incomplete or wrong. Freshness SLAs on key tables
+      (`max(timestamp)` or the age of the last partition), volume checks (rows per run within expected
+      bounds) and lineage-aware alerting catch silent upstream failures. Tools: dbt source freshness,
+      orchestrator sensors with timeouts, data observability platforms.
+
+  - id: stack-spark-003
+    domain: stack
+    topic: spark
+    tags: [partitions, output-files, performance]
+    level: 4
+    kind: internals
+    type: single
+    prompt: |
+      ```python
+      result = (big_df.groupBy("customer_id")          # 2,000 shuffle partitions
+                      .agg(F.sum("amount").alias("total"))
+                      .coalesce(10))
+      result.write.parquet("s3://lake/totals/")
+      ```
+
+      The aggregation used to take 5 minutes with 2,000 tasks. Since `.coalesce(10)` was added to get
+      fewer output files, the whole post-shuffle stage runs with **10 tasks** and takes 50 minutes. Why,
+      and what is the fix?
+    choices:
+      - id: a
+        text: "`coalesce` avoids a shuffle, so it runs inside the aggregation stage and limits it to 10 tasks; `repartition(10)` keeps 2,000"
+        why: "Narrow operations are pipelined into the previous stage: 10 tasks each merge 200 shuffle partitions and do all the aggregation work. `repartition(10)` adds a shuffle of the (small) aggregated data, and the heavy stage keeps its parallelism."
+      - id: b
+        text: "`coalesce` triggers a full shuffle of all the data into 10 partitions, which is slow; use `repartition(10)`, which avoids it"
+        why: "It's the other way round: `repartition` shuffles, `coalesce` doesn't."
+      - id: c
+        text: "Writing Parquet to S3 is slow with few files; increase the S3 upload parallelism"
+        why: "The slowdown is in computing the aggregation with only 10 tasks, not in the upload."
+      - id: d
+        text: "The 10 partitions are skewed by `customer_id`; salt the key before aggregating"
+        why: "Coalesce merges whole partitions roughly evenly; the problem is the number of tasks, not skew."
+    answer: [a]
+    explanation: |
+      `coalesce(n)` is a **narrow** transformation: it combines existing partitions without a shuffle, so
+      Spark pipelines it into the same stage as the preceding work, which then runs with only `n` tasks.
+      That's fine after a filter on cheap data, but a drastic coalesce after heavy computation throttles
+      it. `repartition(n)` costs a shuffle but isolates the output partitioning. Alternatives: let
+      adaptive query execution coalesce small partitions, or rely on the table format's file-size
+      settings and compaction.
+
+  - id: de-sql-008
+    domain: de
+    topic: sql
+    tags: [joins, aggregation, grain]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      Each order can have several payments and several shipments. This query reports too much revenue:
+
+      ```sql
+      SELECT o.order_date, SUM(o.amount) AS revenue
+      FROM orders o
+      LEFT JOIN payments  p ON p.order_id = o.order_id
+      LEFT JOIN shipments s ON s.order_id = o.order_id
+      GROUP BY o.order_date;
+      ```
+
+      Why, and how do you fix it?
+    choices:
+      - id: a
+        text: "Orders are repeated once per payment × shipment pair; pre-aggregate each child table to one row per order, then join"
+        why: "An order with 3 payments and 2 shipments appears 6 times, so its amount is summed 6 times. Aggregating each child to the order grain first keeps one row per order."
+      - id: b
+        text: "LEFT JOIN keeps the orders that have no payments or no shipments; using INNER JOINs instead would remove the extra rows"
+        why: "Inner joins would drop orders without payments or shipments, and still multiply the others."
+      - id: c
+        text: "Replace `SUM(o.amount)` with `SUM(DISTINCT o.amount)` so that the repeated order rows are only counted once"
+        why: "DISTINCT works on values, not rows: two different orders with the same amount on the same day would be counted once."
+      - id: d
+        text: "Add `o.order_id` to the GROUP BY, so that each order is aggregated on its own before the daily total"
+        why: "That changes the grain of the result, and each order's sum is still multiplied by its number of payment × shipment rows."
+    answer: [a]
+    explanation: |
+      Joining a table to two independent one-to-many children creates a **fan-out** (also called a
+      chasm trap): each order is repeated once per combination of its children. Keep each aggregation at
+      its grain: aggregate payments and shipments to one row per order in subqueries or CTEs, then join
+      those to orders. Here, the revenue doesn't even need the joins.
+
+  - id: mlops-ci-cd-001
+    domain: mlops
+    topic: ci-cd
+    tags: [retraining, promotion, automation]
+    level: 4
+    kind: design
+    type: multi
+    prompt: |
+      A weekly pipeline retrains a demand forecasting model and **automatically promotes** the new
+      version to production. Which checks belong in the promotion gate? **Select all that apply.**
+    choices:
+      - id: a
+        text: "Validate the training data first (schema, ranges, volumes, freshness) and stop on anomalies"
+        why: "A broken extract silently produces a bad model, which may still look fine when evaluated on similarly broken data."
+      - id: b
+        text: "Compare the candidate with the current production model on the same recent holdout data, and promote it only if it is at least as good"
+        why: "Comparing champion and challenger on identical data is the only fair test; beating last week's score on different data proves nothing."
+      - id: c
+        text: "Check the performance on key segments (regions, product categories), not only the global metric"
+        why: "A better average can hide a regression on an important segment."
+      - id: d
+        text: "Promote when the candidate's score on its own new holdout beats the score the current model had on last week's holdout"
+        why: "The two scores come from different data: a better number may just mean an easier week. Compare both models on the same data."
+      - id: e
+        text: "Skip the evaluation when the training code hasn't changed since the last run"
+        why: "The data changes every week: the same code can produce a worse model."
+    answer: [a, b, c]
+    explanation: |
+      Automated retraining needs **automated gates**: data validation before training, a
+      champion/challenger comparison on the same recent holdout, segment-level checks, and basic
+      operational checks (model size, latency, sanity of predictions). Promotions should be recorded in
+      the model registry with their evidence, and be easy to roll back. Many teams add a shadow or canary
+      phase before sending full traffic to the new version.
+
+  - id: infra-event-driven-001
+    domain: infra
+    topic: event-driven
+    tags: [object-storage, architecture, operations]
+    level: 3
+    kind: design
+    type: single
+    prompt: |
+      Partners drop CSV files into an object-storage bucket a few hundred times a day, at irregular
+      times. Each file (under 50 MB) must be validated and converted to Parquet within minutes.
+
+      Which design needs the LEAST operational effort?
+    choices:
+      - id: a
+        text: "A small virtual machine running a script that lists the bucket every minute and processes the new files"
+        why: "It works, but you patch and monitor a server, handle restarts and track which files were processed, and it runs around the clock for a few minutes of work."
+      - id: b
+        text: "A managed function (FaaS) triggered by the bucket's object-created events, converting each file as it lands"
+        why: "Storage events invoke the function only when files arrive: no servers to manage, automatic scaling for bursts, and you pay per execution. The files are small enough for a function's limits."
+      - id: c
+        text: "A Spark cluster running a streaming job that watches the bucket"
+        why: "A cluster is heavy machinery for a few hundred small files a day, and it costs money even when idle."
+      - id: d
+        text: "A Kubernetes deployment consuming a queue of file notifications, with a horizontally autoscaled pool of workers"
+        why: "It scales well, but running a cluster and its tooling is far more operational work than the problem needs."
+    answer: [b]
+    explanation: |
+      For sporadic, short, event-driven tasks, **serverless functions** (AWS Lambda, Google Cloud Run
+      functions, Azure Functions) triggered by storage events minimize operations: no servers,
+      automatic scaling, pay per use. Their limits (execution time, memory, cold starts) set the
+      boundary: long or heavy jobs fit better on containers or batch services. Make the handler
+      idempotent, since events can be delivered more than once.
+
+  - id: de-partitioning-001
+    domain: de
+    topic: partitioning
+    tags: [data-layout, object-storage, query-performance]
+    level: 3
+    kind: design
+    type: single
+    prompt: |
+      A 20 TB `events` table in object storage receives about 50 GB per day. Almost every query filters
+      on a **date range**, and many also filter on **one or a few `customer_id` values** (out of 10
+      million customers).
+
+      How should the data be laid out?
+    choices:
+      - id: a
+        text: "Partition by `customer_id`, so that the queries for any single customer only ever read one folder"
+        why: "10 million partitions mean millions of tiny files and huge metadata, and date-range queries would have to touch every partition."
+      - id: b
+        text: "Partition by `event_date`, and sort or cluster the files within each partition by `customer_id`"
+        why: "Date partitions match the range filters with a manageable number of partitions; sorting by customer inside them gives tight min/max statistics per file and row group, so customer filters skip most of the data."
+      - id: c
+        text: "Partition by both `event_date` and `customer_id`, for the best pruning on both filters"
+        why: "Combining them creates billions of tiny partitions (days × customers): the small-files problem at its worst."
+      - id: d
+        text: "Don't partition; store the table as a few very large files and rely on the engine's parallelism"
+        why: "Every query would scan far more than needed: without date partitions, only coarse skipping from file statistics is possible."
+    answer: [b]
+    explanation: |
+      Partition on a **low-to-moderate cardinality** column that most queries filter on (typically a
+      date), aiming for partitions of at least hundreds of MB. For high-cardinality filters, use
+      **clustering** instead: sort or Z-order the data within partitions (Iceberg sort orders, Delta
+      Z-ordering or liquid clustering, BigQuery or Snowflake clustering), so that file and row-group
+      statistics allow skipping. Over-partitioning creates the small-files problem.
+
+  - id: ds-modeling-001
+    domain: ds
+    topic: modeling
+    tags: [credit-risk, tabular-data, regulation]
+    level: 4
+    kind: design
+    type: single
+    prompt: |
+      A credit-risk model on tabular data must satisfy a regulator: the predicted risk must **never
+      decrease when the debt-to-income ratio increases**, all else being equal, and every decision must
+      be explainable per applicant. Accuracy matters too.
+
+      Which approach fits best?
+    choices:
+      - id: a
+        text: "A deep neural network, with explanations taken from its attention weights"
+        why: "Attention weights aren't reliable explanations, and nothing enforces the monotonic constraint."
+      - id: b
+        text: "Gradient-boosted trees with a monotonic constraint on debt-to-income (XGBoost, LightGBM), explained with SHAP values"
+        why: "Monotonic constraints enforce the required direction by construction for every input, gradient boosting is usually strong on tabular data, and SHAP gives per-applicant feature contributions."
+      - id: c
+        text: "An unconstrained gradient-boosted model, then verify on the test set that predicted risk increases with debt-to-income on average"
+        why: "An average trend doesn't guarantee monotonicity for every applicant; the constraint must hold by construction."
+      - id: d
+        text: "A k-nearest-neighbours model, since each decision can be explained by similar past applicants"
+        why: "k-NN offers no monotonicity guarantee and is usually weaker on tabular data with many features."
+    answer: [b]
+    explanation: |
+      Regulated models often need **shape constraints** and **local explanations**. Gradient-boosting
+      libraries support monotonic constraints per feature (`monotone_constraints`), which guarantee the
+      direction of the effect for all inputs, not just on average. Per-decision explanations typically
+      use SHAP values (exact and fast for trees) to produce reason codes. Constrained additive models
+      (e.g. explainable boosting machines) or logistic-regression scorecards are alternatives when full
+      transparency is required.
+
+  - id: mlops-monitoring-001
+    domain: mlops
+    topic: monitoring
+    tags: [delayed-labels, credit-risk, drift]
+    level: 3
+    kind: practical
+    type: multi
+    prompt: |
+      A credit-default model is in production. Its labels (did the customer default?) are only known
+      **90 days** after each prediction. What can you monitor **now** to detect problems early?
+      **Select all that apply.**
+    choices:
+      - id: a
+        text: "Drift of the input features compared with the training data (e.g. a population stability index per feature)"
+        why: "Input drift is observable immediately, and often precedes a drop in performance."
+      - id: b
+        text: "The distribution of predicted scores, and the approval rate"
+        why: "A shift in scores or decisions is visible right away and flags a change in the inputs or in the pipeline."
+      - id: c
+        text: "Data quality of the incoming requests: missing values, out-of-range values, schema changes, volume"
+        why: "Broken inputs are the most common cause of silent model failure, and they can be checked on every request."
+      - id: d
+        text: "The AUC of the model on last week's production predictions"
+        why: "AUC needs the true labels, which for last week's predictions won't exist for another 90 days."
+      - id: e
+        text: "The training loss logged during the model's last training run"
+        why: "That number describes a past training run; it says nothing about what happens in production now."
+    answer: [a, b, c]
+    explanation: |
+      When labels are delayed, monitor **leading indicators**: data quality, input distribution drift
+      (population stability index, Kolmogorov–Smirnov, Jensen–Shannon...), and the distribution of
+      predictions and decisions. They don't prove that performance changed, but they flag when to
+      investigate. Track performance metrics once labels mature, and use early proxy labels when they
+      exist (e.g. a first missed payment).
+
+  - id: swe-schema-evolution-001
+    domain: swe
+    topic: schema-evolution
+    tags: [protobuf, compatibility, events]
+    level: 4
+    kind: internals
+    type: multi
+    prompt: |
+      Services exchange **Protocol Buffers** messages, and old and new versions of producers and
+      consumers run side by side during deployments. Which changes to a message definition are safe?
+      **Select all that apply.**
+    choices:
+      - id: a
+        text: "Adding a new field with a new, never-used field number"
+        why: "Old readers skip unknown fields; new readers see the default value in old messages."
+      - id: b
+        text: "Removing a field, and marking its number and name as `reserved`"
+        why: "Old messages still parse (the field is skipped), and `reserved` prevents anyone from reusing the number later."
+      - id: c
+        text: "Reusing the number of a deleted field for a new field of another type"
+        why: "Old messages still contain data under that number; new readers would decode it as the wrong field, or fail."
+      - id: d
+        text: "Changing a field's type from `int32` to `string`"
+        why: "The wire types differ, so readers on the other version treat the field as unknown: the value is silently lost and they see the default."
+      - id: e
+        text: "Renumbering the fields to make the definition tidier"
+        why: "The field number is the field's identity on the wire: renumbering breaks every message already written."
+    answer: [a, b]
+    explanation: |
+      In Protocol Buffers (and similarly in Thrift, or with names and defaults in Avro), compatibility
+      rests on **field numbers**. Safe evolution: add fields with new numbers, remove fields by reserving
+      their numbers and names, and never change a field's number, or its type to an incompatible one. A
+      schema registry with compatibility checks in CI (backward, forward or full) enforces these rules
+      automatically.
+
+  - id: de-data-quality-001
+    domain: de
+    topic: data-quality
+    tags: [testing, monitoring, upstream-changes]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      An upstream team changes `orders.amount` from **cents to euros** (12550 becomes 125.50). The column
+      type stays `DECIMAL(12,2)`.
+
+      Which check would have caught this before the dashboards did?
+    choices:
+      - id: a
+        text: "An accepted-range test: `amount` must be between 0 and 1,000,000"
+        why: "125.50 is still within the range: the test passes."
+      - id: b
+        text: "A not-null test on `amount` and a uniqueness test on `order_id`"
+        why: "No value became null and no order was duplicated: the values just became 100 times smaller."
+      - id: c
+        text: "A contract test checking that the table's schema (column names and data types) hasn't changed since the last run"
+        why: "The type stayed DECIMAL(12,2): the schema is identical."
+      - id: d
+        text: "A check comparing today's `amount` median or daily total with recent days, alerting on large deviations"
+        why: "Every value dropped by a factor of 100: a median or total compared with the last weeks falls far outside its usual range on the very first day."
+    answer: [d]
+    explanation: |
+      Schema and constraint tests (not null, unique, referential integrity, accepted values) catch
+      structural breaks, but **semantic** changes such as a unit change keep the structure valid.
+      Distribution and volume checks against history (anomaly detection on min, median, max, sums, row
+      counts, null rates) catch them; Great Expectations, Soda, dbt test packages and data observability
+      platforms provide them. Data contracts with the producer prevent such changes from shipping
+      unannounced in the first place.
+
+  - id: mlops-reproducibility-001
+    domain: mlops
+    topic: reproducibility
+    tags: [model-registry, audit, retraining]
+    level: 3
+    kind: practical
+    type: multi
+    prompt: |
+      An auditor asks you to **retrain exactly** the model version currently in production (v12) and
+      obtain the same model. Besides the registry entry, which artifacts must have been recorded at
+      training time? **Select all that apply.**
+    choices:
+      - id: a
+        text: "The commit of the training code, including its configuration (hyperparameters, random seeds)"
+        why: "Code and configuration define what was run; seeds make the randomness repeatable."
+      - id: b
+        text: "An immutable reference to the exact training data (a table snapshot or version, or a file manifest)"
+        why: "Rerunning a query on today's tables returns different data; a snapshot or version id pins it."
+      - id: c
+        text: "The environment: a lockfile, or the digest of the container image used for training"
+        why: "Library versions change results (defaults, algorithms, numerical details)."
+      - id: d
+        text: "The autoscaling configuration of the serving endpoint"
+        why: "It affects how the model is served, not how it was trained."
+      - id: e
+        text: "A copy of the online feature store as it was when v12 was promoted"
+        why: "The online store holds the latest values for serving; training used historical (offline) data, which the data snapshot pins."
+    answer: [a, b, c]
+    explanation: |
+      Reproducing a model needs its full **lineage**: code and configuration (commit, hyperparameters,
+      seeds), data (an immutable snapshot: a Delta or Iceberg version, a DVC or lakeFS commit, a file
+      manifest) and environment (lockfile, image digest, and for GPUs sometimes the hardware and
+      deterministic settings). Experiment trackers and registries such as MLflow record these as run
+      metadata linked to each model version.
+
+  - id: de-table-formats-001
+    domain: de
+    topic: table-formats
+    tags: [object-storage, transactions, metadata]
+    level: 4
+    kind: internals
+    type: single
+    prompt: |
+      Object storage has no transactions and no file locks. How do table formats such as **Apache
+      Iceberg** and **Delta Lake** make a write that adds 500 new files **atomic** for readers?
+    choices:
+      - id: a
+        text: "They lock the table's folder in the object store during the write, so readers wait until it is complete"
+        why: "Object stores offer no folder locks, and readers never wait for writers."
+      - id: b
+        text: "Data files are written first; the commit then atomically publishes new metadata listing them, and readers only see committed snapshots"
+        why: "The commit is a single atomic step: Iceberg swaps the current metadata pointer in its catalog with a compare-and-swap; Delta writes the next numbered entry of its transaction log, which must not already exist. Files that no committed snapshot references are invisible."
+      - id: c
+        text: "They write the 500 files under a temporary prefix, then rename that prefix to the table's folder in one operation when done"
+        why: "Most object stores (S3 among them) have no atomic folder rename: a rename copies and deletes objects one by one, which is the problem that Hive-style tables had."
+      - id: d
+        text: "Readers list the folder and skip files modified less than a few seconds ago"
+        why: "Listing-based reads are what table formats replace: listings can be slow, and without a commit protocol they can expose partial writes."
+    answer: [b]
+    explanation: |
+      Table formats separate the data files from **metadata** that defines which files make up each
+      snapshot. A write uploads new data files (invisible so far), then **commits** by atomically
+      switching to new metadata: a compare-and-swap of the metadata location in the catalog (Iceberg), or
+      a put-if-absent of the next transaction log file (Delta). Concurrent writers that lose the race
+      retry or fail with a conflict. Readers resolve a snapshot from the metadata, so they see all 500
+      files or none.
+
+  - id: swe-testing-003
+    domain: swe
+    topic: testing
+    tags: [sql, ci, pipelines]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      Your team keeps shipping SQL transformation bugs (wrong join conditions, off-by-one date filters)
+      that only show up in production dashboards.
+
+      Which testing approach catches them **before deployment**, at a reasonable cost?
+    choices:
+      - id: a
+        text: "Unit-test each transformation in CI on small fixture tables with expected outputs (e.g. in DuckDB or a temporary schema)"
+        why: "Small, hand-written inputs make each rule explicit (e.g. an order exactly on the boundary date), run in seconds, and fail the build before the change ships. dbt unit tests and SQLMesh tests support this directly."
+      - id: b
+        text: "Review the SQL more carefully in pull requests"
+        why: "Reviews help, but logic errors in joins and date filters are easy to miss by reading; tests make the expected behaviour executable."
+      - id: c
+        text: "Every night, run the whole pipeline against a full copy of production and compare each table's row counts with the day before"
+        why: "This catches some problems, but late and coarsely: counts can be right while the values are wrong."
+      - id: d
+        text: "Add data quality checks in production that alert when the dashboards look wrong"
+        why: "Production checks are valuable, but they detect problems after deployment, which is what the team wants to avoid."
+    answer: [a]
+    explanation: |
+      Treat SQL transformations like code: **unit tests** with small fixtures for the logic, run in CI on
+      a cheap engine or an isolated schema; **integration tests** on a sample of realistic data for the
+      wiring of the pipeline; and **data quality checks** in production for the data itself. Each layer
+      catches different problems, and only the first two catch logic bugs before deployment.
+
+  - id: ds-experimentation-002
+    domain: ds
+    topic: experimentation
+    tags: [marketplace, randomization, interference]
+    level: 4
+    kind: design
+    type: single
+    prompt: |
+      A ride-hailing company tests a new pricing algorithm. Riders are randomized 50/50, and treated
+      riders see **lower prices**. Treated riders book much more, and the test shows +8% rides for the
+      treatment. But **drivers are shared** between both groups, and control riders start seeing longer
+      waiting times.
+
+      Why is the +8% estimate unreliable, and what design is better?
+    choices:
+      - id: a
+        text: "The groups are too small; run the test for twice as long"
+        why: "A longer test doesn't remove the bias: the groups compete for the same drivers the whole time."
+      - id: b
+        text: "The groups share the driver supply (interference), which inflates the gap; randomize by time and region instead (switchback)"
+        why: "Treated riders take drivers away from control riders, so control does worse and treatment better than in a real rollout: the no-interference assumption (SUTVA) fails. Switchbacks give a whole region the same variant for each time slot."
+      - id: c
+        text: "Riders should be randomized by device instead of by account"
+        why: "Changing the randomization unit among riders keeps both groups in the same market, sharing the same drivers."
+      - id: d
+        text: "Drop the randomization and compare all riders' booking rates before and after switching everyone to the new prices"
+        why: "A before/after comparison is confounded by seasonality and every other change over time."
+    answer: [b]
+    explanation: |
+      Standard A/B tests assume that one unit's treatment doesn't affect the others (**SUTVA**). In
+      two-sided marketplaces (ride-hailing, delivery, ad auctions), units compete for a shared supply or
+      budget, so user-level randomization is biased. Designs that randomize at the level of the market
+      fix this: **switchback** tests (alternating variants over time slots within a region), geo or
+      cluster randomization, or two-sided randomization. They trade statistical power for an unbiased
+      estimate.
+
+  - id: de-pipelines-003
+    domain: de
+    topic: pipelines
+    tags: [backfill, idempotency, partitions]
+    level: 3
+    kind: practical
+    type: single
+    prompt: |
+      A bug fix changes how a daily job computes `fct_sessions`. The table is partitioned by day, and the
+      job, which processes one day per run, overwrites its partition. You must **recompute the last 2
+      years**.
+
+      Which approach is the most reliable?
+    choices:
+      - id: a
+        text: "Write a dedicated one-off job that reads all 2 years of input and overwrites the whole table in a single run"
+        why: "One huge run needs a big cluster, fails all-or-nothing after hours, and diverges from the tested daily code path."
+      - id: b
+        text: "Run the existing daily job for each of the 730 days via the orchestrator's backfill, a few days in parallel"
+        why: "Since each run overwrites exactly its own partition, reruns are idempotent: failures affect single days that can be retried, parallelism is controlled, and the backfill uses the same tested code as the daily runs."
+      - id: c
+        text: "Append the recomputed rows with a `version` column, so that queries can pick the latest version"
+        why: "Every consumer then has to filter on the version, and the old, wrong rows stay around."
+      - id: d
+        text: "Drop the table, reset the job's start date two years back, and let the scheduler rebuild it one day per night"
+        why: "The table would be incomplete for the next 2 years."
+    answer: [b]
+    explanation: |
+      Idempotent, partition-scoped jobs make **backfills** routine: the orchestrator (an Airflow
+      backfill, Dagster partitions...) reruns the normal job for each past interval, with bounded
+      concurrency to protect shared resources. Failures are retried per partition, progress is visible,
+      and there is no separate code path to maintain. Consumers see corrected partitions as each one is
+      overwritten.
+
+  - id: infra-reliability-001
+    domain: infra
+    topic: reliability
+    tags: [disaster-recovery, rpo, rto]
+    level: 4
+    kind: design
+    type: single
+    prompt: |
+      A data platform (an object-storage lakehouse plus a cluster running scheduled pipelines) must
+      survive the loss of its cloud region, with an **RPO of 15 minutes** and an **RTO of 4 hours**.
+
+      Which design meets these targets at the lowest cost?
+    choices:
+      - id: a
+        text: "Active-active: run the full platform in two regions at all times, with pipelines writing to both"
+        why: "It meets the targets, but doubles the running costs and adds consistency problems that a 4-hour RTO doesn't require."
+      - id: b
+        text: "Nightly backups of the lake copied to another region, restored by hand after a disaster"
+        why: "Nightly copies mean up to 24 hours of lost data (RPO), and manually restoring a large lake rarely fits in 4 hours."
+      - id: c
+        text: "Replicate storage continuously to a second region and redeploy compute there with infrastructure as code when needed (pilot light), tested by drills"
+        why: "Cross-region replication with a replication-time guarantee (e.g. S3 Replication Time Control, GCS turbo replication) keeps the lag within 15 minutes, and recreating the compute from code fits within hours, while you mostly pay for storage. Drills prove the RTO."
+      - id: d
+        text: "Spread the platform over several availability zones within the same region, with zone-redundant storage"
+        why: "Availability zones protect against the failure of a data centre, not against the loss of the whole region."
+    answer: [c]
+    explanation: |
+      Disaster recovery strategies trade cost against **RPO** (how much data you can lose) and **RTO**
+      (how long you can be down): backup and restore (hours to days), pilot light (data replicated,
+      minimal infrastructure ready), warm standby (a scaled-down copy running), and active-active (near
+      zero RPO and RTO, at the highest cost). Choose the cheapest strategy that meets both targets,
+      automate it with infrastructure as code, and test failovers regularly: untested DR plans usually
+      fail.
+
+  - id: de-streaming-006
+    domain: de
+    topic: streaming
+    tags: [latency, architecture, warehouse]
+    level: 3
+    kind: design
+    type: single
+    prompt: |
+      Product managers want dashboards on app events with **at most 15 minutes of delay** (today they
+      are refreshed nightly). The volume is about 2,000 events per second, landing as files in object
+      storage. The data team has **three people**.
+
+      Which approach meets the requirement with the LEAST operational overhead?
+    choices:
+      - id: a
+        text: "A dedicated Flink cluster consuming the events with exactly-once sinks and sub-second end-to-end latency for every dashboard"
+        why: "It meets the target many times over, but a streaming cluster is a lot to operate for a 15-minute requirement and a small team."
+      - id: b
+        text: "An incremental load every few minutes that ingests only the new files into the warehouse (or managed auto-ingest)"
+        why: "Frequent incremental batch loads, or a warehouse's managed ingestion of new files, meet a 15-minute freshness target with simple, restartable jobs."
+      - id: c
+        text: "Keep the nightly batch job but schedule it every hour, reprocessing the full history of events at each run"
+        why: "Hourly misses the 15-minute target, and reprocessing the whole history at each run wastes more compute as the data grows."
+      - id: d
+        text: "Point the dashboards at the production application database"
+        why: "Analytical queries on the operational database put production at risk, and the events aren't stored there anyway."
+    answer: [b]
+    explanation: |
+      Pick the simplest architecture that meets the **freshness requirement**. Minutes of latency are
+      well served by frequent incremental batch loads (process only new files or offsets, track
+      progress, keep loads idempotent) or by the managed file ingestion that warehouses and lakehouses
+      offer. Streaming engines (Flink, Spark Structured Streaming, Kafka Streams) are worth their
+      operational cost for seconds-level latency or continuous stateful processing.
+
+  - id: mlops-rag-002
+    domain: mlops
+    topic: rag
+    tags: [genai, evaluation, debugging]
+    level: 4
+    kind: practical
+    type: single
+    prompt: |
+      Users report that your RAG assistant gives **wrong answers to questions that the documentation
+      does answer**. You have a set of 200 test questions, each labelled with the documentation passage
+      that contains its answer.
+
+      What is the best first step to locate the problem?
+    choices:
+      - id: a
+        text: "Replace the LLM with a stronger one and compare the answers"
+        why: "This changes one component blindly: if retrieval misses the passage, a stronger model won't fix it."
+      - id: b
+        text: "Evaluate retrieval and generation separately: is the labelled passage in the top-k chunks (recall@k), and if so, is the answer right?"
+        why: "If recall@k is low, fix retrieval (chunking, hybrid search, reranking); if retrieval is fine but the answers are wrong, fix generation (prompt, grounding, model). Each stage gets its own metric."
+      - id: c
+        text: "Tune the prompt until the 200 test answers look right"
+        why: "Without knowing which stage fails, prompt tweaking may overfit the test set and leave the real cause untouched."
+      - id: d
+        text: "Increase the number of retrieved chunks from 5 to 50, so that the passage containing the answer is almost surely somewhere in the context"
+        why: "More chunks raise cost and latency and can bury the right passage among distractors; and you still don't know where the failure is."
+    answer: [b]
+    explanation: |
+      A RAG system is a pipeline: evaluate its **stages separately**. Retrieval metrics (recall@k, MRR on
+      labelled question–passage pairs) tell whether the right context reaches the model; generation
+      metrics (correctness, and faithfulness to the retrieved context, scored by humans or an LLM judge)
+      tell whether the model uses it. Frameworks such as Ragas implement such metrics, but the principle
+      is the same as debugging any pipeline: isolate the failing stage first.
+
+  - id: de-event-schemas-001
+    domain: de
+    topic: event-schemas
+    tags: [events, producers, consumers]
+    level: 4
+    kind: design
+    type: single
+    prompt: |
+      The checkout team renamed the field `amount` to `total_amount` in the events it publishes. Three
+      downstream pipelines broke silently: the field now arrives as null. This is the third such incident
+      this year.
+
+      Which measure prevents it best?
+    choices:
+      - id: a
+        text: "Have each consumer team add defensive code that tries several possible field names"
+        why: "It patches the symptom, spreads guessing logic everywhere, and won't anticipate the next change."
+      - id: b
+        text: "A schema registered for the events, a compatibility check in the producer's CI, and breaking changes shipped as a new version"
+        why: "The breaking change is stopped where it is made, before deployment; when a break is really needed, consumers get a new version and time to migrate."
+      - id: c
+        text: "A nightly job in each consumer comparing the event schema seen today with yesterday's, alerting the owning team on any difference it finds"
+        why: "It detects the break after the fact, once bad data has already flowed downstream."
+      - id: d
+        text: "Consumer-side contract tests in each pipeline's CI, run against sample events captured from production every week"
+        why: "They run in the consumers' CI on past samples, so they only notice the rename after it has reached production; the change must be stopped where it is made."
+    answer: [b]
+    explanation: |
+      A **data contract** makes the interface between a producer and its consumers explicit: schema,
+      semantics, ownership and guarantees, versioned like an API. Enforcement belongs on the producer
+      side: a schema registry or contract tests in CI reject incompatible changes, so that a rename
+      becomes an addition followed by a deprecation. Consumer-side checks remain a useful safety net,
+      but they only detect breaks after they happen.
+
+  - id: ds-interpretability-001
+    domain: ds
+    topic: interpretability
+    tags: [feature-importance, correlated-features]
+    level: 3
+    kind: concept
+    type: single
+    prompt: |
+      A random forest predicts house prices. `living_area_m2` and `n_rooms` are strongly correlated
+      (r = 0.9). **Permutation importance** on a validation set ranks both of them **low**, but dropping
+      both features at once makes the error jump.
+
+      What explains this?
+    choices:
+      - id: a
+        text: "The trees are too shallow to use both features, so each one only gets a small share of the splits"
+        why: "Depth isn't the issue: the model does use the information (dropping both hurts); the importance is split because each feature can stand in for the other."
+      - id: b
+        text: "Shuffling one of them leaves its correlated partner intact, which carries most of the same information"
+        why: "Importance is measured one feature at a time; with redundant features, losing one costs little because the other compensates. Permute correlated features together to see their joint importance."
+      - id: c
+        text: "Random forests ignore correlated features during training"
+        why: "They use them, often splitting on one or the other almost interchangeably, which is precisely what spreads the importance."
+      - id: d
+        text: "The two features cancel each other out, because their effects on the predicted price have opposite signs"
+        why: "Both relate positively to price, and the error jump when dropping both shows they carry shared, useful information."
+    answer: [b]
+    explanation: |
+      Permutation importance measures how much the score drops when one feature's values are shuffled.
+      With **correlated features**, the model falls back on the partner, so both look unimportant on
+      their own even if the information they share is essential. Shuffling also creates unrealistic
+      combinations (a 20 m² house with 8 rooms). Remedies: permute groups of correlated features
+      together, cluster features by correlation and keep one per cluster, or use interpretation methods
+      that account for dependence between features.

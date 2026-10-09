@@ -17,6 +17,35 @@ Domain = Literal["ds", "de", "cs", "swe", "stack", "infra"]
 Kind = Literal["concept", "practical", "internals", "design"]
 QuestionType = Literal["single", "multi"]
 
+# What the taxonomy means, shared by the HTML pages and the deck-design prompt.
+DOMAIN_LABELS: dict[str, str] = {
+    "ds": "Data science",
+    "de": "Data engineering",
+    "cs": "Computer science",
+    "swe": "Software engineering",
+    "stack": "Modern stack",
+    "infra": "Cloud & infra",
+}
+LEVEL_GUIDE: dict[int, tuple[str, str]] = {
+    1: ("junior", "foundations: core definitions and basic usage that anyone in the field should know"),
+    2: ("junior+", "common practical situations: standard tools used correctly, classic beginner mistakes"),
+    3: ("mid", "applied: realistic scenarios, typical pitfalls, choosing between standard approaches"),
+    4: ("senior", "trade-offs and non-obvious behaviour: design decisions, production debugging, performance"),
+    5: ("staff", "deep internals and edge cases: subtle semantics, failure modes, guarantees and their limits"),
+}
+KIND_GUIDE: dict[str, str] = {
+    "concept": "understanding an idea, a definition or a principle",
+    "practical": "hands-on usage: code, queries, commands, configuration, debugging",
+    "internals": "how a tool, system or algorithm works underneath",
+    "design": "architecture and trade-off decisions",
+}
+
+
+def level_label(level: int | str) -> str:
+    """E.g. "L3 · mid"."""
+    name = LEVEL_GUIDE.get(int(level), ("?", ""))[0]
+    return f"L{level} · {name}"
+
 
 class _Strict(BaseModel):
     # A misspelled field name is an error instead of being silently dropped.

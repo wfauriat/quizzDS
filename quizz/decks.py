@@ -32,6 +32,20 @@ def longest_choice_bias(deck: Deck) -> tuple[int, int]:
     return hits, len(singles)
 
 
+def length_bias_warning(deck: Deck) -> str | None:
+    """Explain the problem if the correct choice is the longest too often (or never), else None.
+
+    Only decks with at least 8 single-answer questions are judged; smaller ones are too noisy.
+    """
+    hits, singles = longest_choice_bias(deck)
+    if singles >= 8 and not 0.1 <= hits / singles <= 0.4:
+        return (
+            f"the correct choice is the longest one in {hits}/{singles} single-answer questions, "
+            "which gives answers away: aim for 10-40%"
+        )
+    return None
+
+
 def load_deck(path: Path) -> Deck:
     with path.open(encoding="utf-8") as f:
         return Deck.model_validate(yaml.safe_load(f))

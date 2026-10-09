@@ -16,7 +16,7 @@ from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
 
 from quizz.decks import ROOT
-from quizz.models import Deck, Question
+from quizz.models import DOMAIN_LABELS, Deck, Question, level_label
 from quizz.service import Bucket, ReviewItem, Summary
 
 RENDER_DIR = ROOT / "data" / "render"
@@ -201,15 +201,6 @@ def render_deck(deck: Deck, reveal: bool = False) -> str:
 
 # ---------------------------------------------------------------- past session (same content as the UI summary)
 
-DOMAIN_LABELS = {
-    "ds": "Data science",
-    "de": "Data engineering",
-    "cs": "Computer science",
-    "swe": "Software engineering",
-    "stack": "Modern stack",
-    "infra": "Cloud & infra",
-}
-LEVEL_LABELS = {"1": "L1 · junior", "2": "L2 · junior+", "3": "L3 · mid", "4": "L4 · senior", "5": "L5 · staff"}
 CONFIDENCE_LABELS = {1: "Guess", 2: "Unsure", 3: "Sure"}
 _STATE_TAGS = {"correct": "✓ your answer", "wrong": "✗ your answer", "missed": "correct answer"}
 
@@ -346,7 +337,7 @@ def render_session(summary: Summary) -> str:
 </section>
 <div class="breakdowns">
   {_bars("By domain", s.by_domain, lambda k: DOMAIN_LABELS.get(k, k))}
-  {_bars("By level", s.by_level, lambda k: LEVEL_LABELS.get(k, f"L{k}"))}
+  {_bars("By level", s.by_level, level_label)}
 </div>
 <div class="toolbar">
   <h2>Review</h2>

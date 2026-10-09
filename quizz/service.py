@@ -214,6 +214,15 @@ def finish_session(conn: sqlite3.Connection, session_id: int) -> None:
         )
 
 
+def delete_session(conn: sqlite3.Connection, session_id: int) -> None:
+    """Remove a session with its served questions and answers (e.g. an abandoned one)."""
+    get_session(conn, session_id)
+    with conn:
+        conn.execute("DELETE FROM attempt WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM session_question WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM quiz_session WHERE id = ?", (session_id,))
+
+
 def summarize(conn: sqlite3.Connection, session_id: int) -> Summary:
     """Score, breakdowns and per-question review (with answers) of a session."""
     session = get_session(conn, session_id)

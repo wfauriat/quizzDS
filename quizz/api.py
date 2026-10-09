@@ -8,6 +8,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager, closing
+from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -16,7 +17,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from quizz import service
+from quizz import design, service
 from quizz.db import DB_PATH, connect, import_decks
 from quizz.decks import DECKS_DIR, ROOT, load_decks
 from quizz.models import Domain, Kind, QuestionType
@@ -61,6 +62,17 @@ class AnswerIn(BaseModel):
     selected: list[str] = Field(min_length=1, description="Chosen choice ids.")
     confidence: Literal[1, 2, 3] = Field(description="1 guess, 2 unsure, 3 sure.")
     time_ms: int = Field(ge=0, description="Time from display to submit.")
+
+
+class GeneratedDeckIn(BaseModel):
+    text: str = Field(min_length=1, max_length=1_000_000, description="The YAML deck (a whole LLM reply works too).")
+
+
+class ImportedDeck(BaseModel):
+    deck_id: str
+    title: str
+    n_questions: int
+    file: str
 
 
 class Feedback(BaseModel):
@@ -123,6 +135,39 @@ def finish(session_id: int, db: Db) -> Summary:
 @router.get("/sessions/{session_id}/summary")
 def summary(session_id: int, db: Db) -> Summary:
     return service.summarize(db, session_id)
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def delete_session(session_id: int, db: Db) -> None:
+    """Delete a session and its answers from the history (cannot be undone)."""
+    service.delete_session(db, session_id)
+
+
+@router.post("/design/prompt")
+def design_prompt(body: design.DesignRequest, request: Request, db: Db) -> design.DesignPrompt:
+    """Build the prompt asking an LLM to write a deck with this shape."""
+    decks = [deck for _, deck in load_decks(request.app.state.decks_dir)]
+    taken = {d.id for d in decks} | {r["id"] for r in db.execute("SELECT id FROM deck")}
+    deck_id = design.suggest_deck_id(body.title, taken)
+    prompt = design.build_prompt(body, decks, deck_id, date.today())
+    return design.DesignPrompt(deck_id=deck_id, n_questions=body.total, prompt=prompt)
+
+
+@router.post("/design/import", status_code=201)
+def design_import(body: GeneratedDeckIn, request: Request, db: Db) -> ImportedDeck:
+    """Validate a generated deck, save it in decks/ and load it, ready to play."""
+    decks_dir = request.app.state.decks_dir
+    deck, path = design.save_generated_deck(body.text, decks_dir, date.today())
+    import_decks(db, load_decks(decks_dir))
+    return ImportedDeck(deck_id=deck.id, title=deck.title, n_questions=len(deck.questions), file=path.name)
+
+
+@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+def unknown_endpoint(path: str) -> None:
+    """Must stay last. Without it, unknown /api paths fall through to the static UI (405 on POST)."""
+    raise service.NotFound(
+        f"no API endpoint /api/{path}: if the UI is newer than the server, restart `python -m quizz serve`"
+    )
 
 
 _STATUS = {service.NotFound: 404, service.Conflict: 409, service.Invalid: 422}

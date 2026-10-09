@@ -3,7 +3,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from quizz.decks import DECKS_DIR, DeckError, load_decks, longest_choice_bias
+from quizz.decks import DECKS_DIR, DeckError, length_bias_warning, load_decks, longest_choice_bias
 from quizz.models import Deck, Question, deck_json_schema
 from tests.helpers import make_question, write_deck
 
@@ -24,8 +24,14 @@ def test_longest_choice_bias():
 
 def test_repo_decks_do_not_give_answers_away():
     for path, deck in load_decks():
-        hits, singles = longest_choice_bias(deck)
-        assert 0.1 <= hits / singles <= 0.4, f"{path.name}: correct choice is the longest in {hits}/{singles}"
+        assert length_bias_warning(deck) is None, path.name
+
+
+def test_length_bias_warning_needs_enough_questions():
+    biased = [make_question(id=f"q-{i}", choices=[{"id": "a", "text": "long correct"}, {"id": "b", "text": "x"}])
+              for i in range(8)]
+    assert "8/8" in length_bias_warning(Deck.model_validate({"id": "d", "title": "d", "questions": biased}))
+    assert length_bias_warning(Deck.model_validate({"id": "d", "title": "d", "questions": biased[:7]})) is None
 
 
 def test_schema_file_is_up_to_date():

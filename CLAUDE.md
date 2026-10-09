@@ -38,6 +38,9 @@ Run from the repo root with the venv `/opt/venvs/pyDS` (`PY=/opt/venvs/pyDS/bin/
 - `$PY -m quizz sessions` lists past sessions; `review [SESSION]` renders one (default: the latest finished)
   as an HTML page like the UI summary. The UI's History tab shows the same thing.
 - `$PY -m pytest -q`
+- UI tabs: Decks (play), History (review or delete past sessions), Design. Design builds a prompt asking an LLM to
+  write a deck with a chosen level and size per domain (`quizz/design.py`), then validates and imports the
+  pasted reply into `decks/<id>.yaml`, rejecting id collisions and the answer-length bias.
 
 ### Session loop
 1. Read `notes/learner.md`, then run `$PY -m quizz report`. Accuracy counts first attempts only;
@@ -59,3 +62,5 @@ Run from the repo root with the venv `/opt/venvs/pyDS` (`PY=/opt/venvs/pyDS/bin/
   (`tests/test_decks.py` enforces it).
 - Never show a deck's questions or answers in chat before the user has taken it.
 - After writing a deck, run `validate`, then `import` (a running server picks it up on page reload).
+- If the user pastes a Design-tab prompt, follow its "How to deliver" section: write the deck file, run
+  validate and import, and reply with the deck's shape only.

@@ -1,11 +1,18 @@
 import { useState } from "react";
 import { api, type DeckInfo, type Mode, type SessionOut, type Summary } from "./api";
 import { DeckList } from "./components/DeckList";
+import { Design } from "./components/Design";
 import { History } from "./components/History";
 import { Quiz } from "./components/Quiz";
 import { SummaryView } from "./components/SummaryView";
 
-type Tab = "decks" | "history";
+type Tab = "decks" | "history" | "design";
+
+const TABS: { tab: Tab; label: string }[] = [
+  { tab: "decks", label: "Decks" },
+  { tab: "history", label: "History" },
+  { tab: "design", label: "Design" },
+];
 
 type Screen =
   | { name: Tab }
@@ -42,7 +49,7 @@ export function App() {
             <span className="brand-mark">Q</span> quizzDS
           </button>
           <nav className="nav">
-            {(["decks", "history"] as const).map((tab) => (
+            {TABS.map(({ tab, label }) => (
               <button
                 key={tab}
                 type="button"
@@ -50,7 +57,7 @@ export function App() {
                 aria-current={activeTab === tab ? "page" : undefined}
                 onClick={() => go(tab)}
               >
-                {tab === "decks" ? "Decks" : "History"}
+                {label}
               </button>
             ))}
           </nav>
@@ -59,6 +66,7 @@ export function App() {
       <main>
         {screen.name === "decks" && <DeckList onStart={start} onReview={(id) => review(id, "decks")} />}
         {screen.name === "history" && <History onOpen={(id) => review(id, "history")} />}
+        {screen.name === "design" && <Design onImported={() => setScreen({ name: "decks" })} />}
         {screen.name === "quiz" && (
           <Quiz
             key={screen.session.session_id}
@@ -70,7 +78,7 @@ export function App() {
         {screen.name === "summary" && (
           <SummaryView
             summary={screen.summary}
-            backLabel={screen.back === "history" ? "Back to history" : "Back to decks"}
+            backLabel={`Back to ${screen.back}`}
             onBack={() => setScreen({ name: screen.back })}
           />
         )}

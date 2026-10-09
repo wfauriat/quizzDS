@@ -12,7 +12,7 @@ from typing import Annotated, Optional
 import typer
 
 from quizz.db import DB_PATH, connect, import_decks
-from quizz.decks import DECKS_DIR, DeckError, load_decks, longest_choice_bias
+from quizz.decks import DECKS_DIR, DeckError, length_bias_warning, load_decks, longest_choice_bias
 from quizz.models import Deck, deck_json_schema
 from quizz import service
 from quizz.render import RENDER_DIR, render_deck, render_session
@@ -47,12 +47,9 @@ def validate(
             counts = Counter(getattr(q, axis) for q in qs)
             typer.echo(f"    {axis:<7} " + "  ".join(f"{k}:{n}" for k, n in sorted(counts.items())))
         hits, singles = longest_choice_bias(deck)
-        biased = singles >= 8 and not 0.1 <= hits / singles <= 0.4
-        typer.secho(
-            f"    lint    correct choice is the longest in {hits}/{singles} single-answer questions"
-            + ("  ⚠ gives answers away: aim for 10-40%" if biased else ""),
-            fg="yellow" if biased else None,
-        )
+        typer.echo(f"    lint    correct choice is the longest in {hits}/{singles} single-answer questions")
+        if warning := length_bias_warning(deck):
+            typer.secho(f"    ⚠ {warning}", fg="yellow")
 
 
 @app.command()

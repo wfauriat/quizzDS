@@ -98,6 +98,34 @@ export interface Summary extends SessionInfo {
   items: ReviewItem[];
 }
 
+export interface DomainSpec {
+  domain: Domain;
+  level: number;
+  count: number;
+  focus: string;
+}
+
+export interface DesignRequest {
+  title: string;
+  domains: DomainSpec[];
+  spread: boolean;
+  multi_share: number;
+  kinds: Partial<Record<Kind, number>> | null; // null: let the LLM mix the kinds
+}
+
+export interface DesignPrompt {
+  deck_id: string;
+  n_questions: number;
+  prompt: string;
+}
+
+export interface ImportedDeck {
+  deck_id: string;
+  title: string;
+  n_questions: number;
+  file: string;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
@@ -111,8 +139,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (!res.ok) {
     const detail = await res.json().then((j) => j.detail, () => res.statusText);
+    if (Array.isArray(detail)) {
+      throw new Error(detail.map((d) => `${(d.loc ?? []).slice(1).join(".")}: ${d.msg}`).join("\n"));
+    }
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -123,4 +155,7 @@ export const api = {
   finish: (sessionId: number) => request<Summary>("POST", `/sessions/${sessionId}/finish`),
   listSessions: () => request<SessionInfo[]>("GET", "/sessions"),
   summary: (sessionId: number) => request<Summary>("GET", `/sessions/${sessionId}/summary`),
+  deleteSession: (sessionId: number) => request<void>("DELETE", `/sessions/${sessionId}`),
+  designPrompt: (body: DesignRequest) => request<DesignPrompt>("POST", "/design/prompt", body),
+  importDeck: (text: string) => request<ImportedDeck>("POST", "/design/import", { text }),
 };

@@ -16,6 +16,21 @@ export function History({ onOpen }: Props) {
     api.listSessions().then(setSessions, (e: Error) => setError(e.message));
   }, []);
 
+  async function remove(s: SessionInfo) {
+    const what = s.finished_at
+      ? `this finished ${s.mode} session (${s.n_correct}/${s.n_questions})`
+      : "this unfinished session";
+    const answers = s.n_answered ? ` and its ${s.n_answered} answer${s.n_answered === 1 ? "" : "s"}` : "";
+    if (!window.confirm(`Delete ${what}${answers} from the history? This can't be undone.`)) return;
+    setError(null);
+    try {
+      await api.deleteSession(s.session_id);
+      setSessions((list) => list && list.filter((x) => x.session_id !== s.session_id));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function open(sessionId: number) {
     setOpening(sessionId);
     setError(null);
@@ -38,7 +53,13 @@ export function History({ onOpen }: Props) {
       ) : (
         <div className="card session-list">
           {sessions.map((s) => (
-            <SessionRow key={s.session_id} session={s} busy={opening !== null} onOpen={() => open(s.session_id)} />
+            <SessionRow
+              key={s.session_id}
+              session={s}
+              busy={opening !== null}
+              onOpen={() => open(s.session_id)}
+              onDelete={() => remove(s)}
+            />
           ))}
         </div>
       )}
@@ -46,7 +67,14 @@ export function History({ onOpen }: Props) {
   );
 }
 
-function SessionRow({ session: s, busy, onOpen }: { session: SessionInfo; busy: boolean; onOpen: () => void }) {
+interface RowProps {
+  session: SessionInfo;
+  busy: boolean;
+  onOpen: () => void;
+  onDelete: () => void;
+}
+
+function SessionRow({ session: s, busy, onOpen, onDelete }: RowProps) {
   // An unfinished exam can't be reviewed: its answers are only revealed once it is finished.
   const locked = s.mode === "exam" && !s.finished_at;
   const pct = Math.round((100 * s.n_correct) / s.n_questions);
@@ -55,20 +83,32 @@ function SessionRow({ session: s, busy, onOpen }: { session: SessionInfo; busy: 
     ? formatDuration(Date.parse(s.finished_at) - Date.parse(s.started_at))
     : `unfinished · ${s.n_answered}/${s.n_questions} answered`;
   return (
-    <button type="button" className="session-row" onClick={onOpen} disabled={locked || busy}>
-      <span className="session-main">
-        <span className="session-title">{s.deck_title}</span>
-        <span className="session-meta">
-          #{s.session_id} · {when} · <span className={`mode mode-${s.mode}`}>{s.mode}</span> · {duration}
+    <div className="session-row">
+      <button type="button" className="session-open" onClick={onOpen} disabled={locked || busy}>
+        <span className="session-main">
+          <span className="session-title">{s.deck_title}</span>
+          <span className="session-meta">
+            #{s.session_id} · {when} · <span className={`mode mode-${s.mode}`}>{s.mode}</span> · {duration}
+          </span>
         </span>
-      </span>
-      <span className="session-score">
-        <strong>
-          {s.n_correct}/{s.n_questions}
-        </strong>
-        <span className="muted">{pct}%</span>
-      </span>
-      <span className="session-go">{locked ? "locked" : "Review →"}</span>
-    </button>
+        <span className="session-score">
+          <strong>
+            {s.n_correct}/{s.n_questions}
+          </strong>
+          <span className="muted">{pct}%</span>
+        </span>
+        <span className="session-go">{locked ? "locked" : "Review →"}</span>
+      </button>
+      <button
+        type="button"
+        className="session-delete"
+        onClick={onDelete}
+        disabled={busy}
+        title="Delete this session"
+        aria-label={`Delete session ${s.session_id}`}
+      >
+        ×
+      </button>
+    </div>
   );
 }

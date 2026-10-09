@@ -143,6 +143,24 @@ def test_past_sessions_can_be_listed_and_reviewed(client):
     assert review["items"][0]["selected"] == ["a"] and review["items"][0]["question"]["answer"] == ["a"]
 
 
+def test_sessions_can_be_deleted(client):
+    unfinished = start(client)["session_id"]
+    answer(client, unfinished, "cs-test-001", ["a"])
+    finished = start(client, mode="exam")["session_id"]
+    client.post(f"/api/sessions/{finished}/finish")
+
+    assert client.delete(f"/api/sessions/{unfinished}").status_code == 204
+    assert [s["session_id"] for s in client.get("/api/sessions").json()] == [finished]
+    assert client.get(f"/api/sessions/{unfinished}/summary").status_code == 404
+    with closing(connect(client.app.state.db_path)) as conn:
+        assert conn.execute("SELECT count(*) FROM attempt").fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM session_question WHERE session_id = ?", (unfinished,)).fetchone()[0] == 0
+
+    assert client.delete(f"/api/sessions/{finished}").status_code == 204
+    assert client.get("/api/decks").json()[0]["last_finished"] is None
+    assert client.delete(f"/api/sessions/{finished}").status_code == 404
+
+
 @pytest.mark.parametrize(
     "question_id, selected, status",
     [
@@ -200,3 +218,6 @@ def test_serves_the_built_web_ui(tmp_path):
     with TestClient(app) as c:
         assert c.get("/").text == "<h1>quizz</h1>"
         assert c.get("/api/decks").status_code == 200
+        # An unknown API path is a clear 404, not a 405 from the static files mounted at "/".
+        r = c.post("/api/design/nope", json={})
+        assert r.status_code == 404 and "restart `python -m quizz serve`" in r.json()["detail"]

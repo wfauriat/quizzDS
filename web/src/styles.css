@@ -359,25 +359,44 @@ kbd {
 }
 .session-row {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
-  padding: 14px 20px;
-  border: none;
+  align-items: stretch;
   border-bottom: 1px solid var(--border);
-  background: none;
-  text-align: left;
-  cursor: pointer;
 }
 .session-row:last-child {
   border-bottom: none;
 }
-.session-row:hover:not(:disabled) {
+.session-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 8px 14px 20px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.session-open:hover:not(:disabled) {
   background: var(--surface-2);
 }
-.session-row:disabled {
+.session-open:disabled {
   cursor: default;
   opacity: 0.6;
+}
+.session-delete {
+  flex: none;
+  width: 44px;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+.session-delete:hover:not(:disabled) {
+  color: var(--ko);
+  background: var(--ko-bg);
 }
 .session-main {
   flex: 1;
@@ -409,8 +428,153 @@ kbd {
   font-size: 13px;
   font-weight: 600;
 }
-.session-row:disabled .session-go {
+.session-open:disabled .session-go {
   color: var(--muted);
+}
+
+/* ---------- design ---------- */
+
+.design,
+.design-step {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.design h1,
+.design > p {
+  margin: 0;
+}
+.design-step h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 1.05rem;
+}
+.design-step > p {
+  margin: 0;
+  font-size: 14px;
+}
+.step {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+}
+input[type="text"],
+input[type="number"],
+textarea {
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.field.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.field.inline input {
+  width: 72px;
+}
+.domain-grid {
+  display: grid;
+}
+.domain-head,
+.domain-row {
+  display: grid;
+  grid-template-columns: 160px minmax(150px, 1fr) 76px minmax(130px, 1.2fr);
+  gap: 12px;
+  align-items: center;
+}
+.domain-head {
+  padding-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.domain-row {
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+.domain-off .domain-name,
+.domain-off .level-cell {
+  opacity: 0.45;
+}
+.level-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.level-cell input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.level-value {
+  width: 92px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.design-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  font-size: 14px;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.check input {
+  accent-color: var(--accent);
+}
+.design-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.prompt-text,
+.deck-input {
+  width: 100%;
+  resize: vertical;
+  background: var(--code-bg);
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.deck-input.masked {
+  color: transparent;
+  text-shadow: 0 0 7px var(--muted);
+}
+.success {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--ok);
+  border-radius: 8px;
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.error ul {
+  margin: 6px 0;
+  padding-left: 1.2em;
 }
 
 /* ---------- quiz ---------- */
@@ -768,6 +932,29 @@ button.choice:active {
 }
 .choice-body {
   min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .domain-head {
+    display: none;
+  }
+  .domain-row {
+    grid-template-columns: minmax(0, 1fr) 76px;
+    grid-template-areas: "name count" "level level" "focus focus";
+    gap: 8px;
+  }
+  .domain-name {
+    grid-area: name;
+  }
+  .level-cell {
+    grid-area: level;
+  }
+  .domain-count {
+    grid-area: count;
+  }
+  .domain-focus {
+    grid-area: focus;
+  }
 }
 
 @media (max-width: 600px) {
